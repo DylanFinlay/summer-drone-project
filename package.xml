@@ -3,9 +3,21 @@
 <package format="3">
   <name>diy_autonomous_drone</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="dylan@todo.todo">dylan</maintainer>
+  <description>ROS 2 nodes for a vision-guided DIY autonomous drone.</description>
+  <maintainer email="dylan.finlay33@gmail.com">Dylan Finlay</maintainer>
   <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>mavros_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>mavros</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

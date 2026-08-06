@@ -1,0 +1,10 @@
+# Overrides for MAVROS' standard ArduPilot configuration.
+# Body-relative velocities preserve the expected ROS convention:
+# x=forward, y=left, z=up, angular.z=counter-clockwise.
+/**/setpoint_velocity:
+  ros__parameters:
+    mav_frame: BODY_NED
+
+/**/sys:
+  ros__parameters:
+    conn_timeout: 2.0

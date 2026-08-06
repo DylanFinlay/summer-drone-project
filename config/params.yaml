@@ -1,0 +1,36 @@
+vision_node:
+  ros__parameters:
+    camera_index: 0
+    camera_backend: auto
+    frame_width: 640
+    frame_height: 480
+    fps: 20
+
+tracking_bridge_node:
+  ros__parameters:
+    # Overridden by the launch argument. Options: hover, active_track,
+    # gesture_control. Keep hover as the power-on default.
+    autonomy_mode: hover
+    enable_gesture_control: false
+    target_box_height: 0.35
+    k_p_yaw: 1.2
+    k_p_forward: 1.5
+    max_linear_speed: 0.35
+    max_angular_speed: 0.4
+    gesture_speed: 0.25
+    target_timeout_sec: 0.5
+    gesture_timeout_sec: 0.3
+    command_rate_hz: 20
+
+safety_supervisor_node:
+  ros__parameters:
+    watchdog_timeout_sec: 0.5
+    min_safety_box_height: 0.85
+
+fc_interface_node:
+  ros__parameters:
+    command_rate_hz: 20
+    command_timeout_sec: 0.5
+    state_timeout_sec: 2.0
+    require_guided_mode: true
+    require_armed: true
