@@ -26,6 +26,11 @@ tracking_bridge_node:
     autonomy_mode: hover
     enable_gesture_control: false
     target_box_height: 0.35
+    # Filter alpha weights each new detection; 1.0 disables smoothing.
+    tracking_filter_alpha: 0.35
+    # Normalized image-centre and box-height error deadbands.
+    yaw_error_deadband: 0.04
+    forward_error_deadband: 0.025
     k_p_yaw: 1.2
     k_p_forward: 1.5
     max_linear_speed: 0.35

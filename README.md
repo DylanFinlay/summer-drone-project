@@ -131,6 +131,14 @@ mode changes, and other safety stops bypass ramping and publish zero
 immediately. Configure these limits in `config/params.yaml` only after testing
 them in SITL.
 
+Active tracking also smooths normalized target position and box height with an
+exponential filter (`tracking_filter_alpha: 0.35`). Continuous deadbands ignore
+small horizontal (`0.04`) and follow-distance (`0.025`) errors without creating
+a command jump at either threshold. Filtering resets after stale input or a
+mode change, while the safety supervisor continues using raw observations for
+immediate proximity protection. Set the filter alpha to `1.0` or a deadband to
+`0.0` to disable that individual behavior during comparison tests.
+
 Launch toggles:
 
 - `autonomy_mode`: `hover`, `active_track`, or `gesture_control`

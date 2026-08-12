@@ -18,6 +18,10 @@ from diy_autonomous_drone.autonomy_modes import (
     mode_rejection_reason,
     normalized_mode,
 )
+from diy_autonomous_drone.tracking_filter import (
+    TargetObservationFilter,
+    apply_continuous_deadband,
+)
 from diy_autonomous_drone.velocity_limiter import VelocityLimiter
 
 
@@ -41,6 +45,9 @@ class TrackingBridgeNode(Node):
         self.declare_parameter('autonomy_mode', self.MODE_HOVER)
         self.declare_parameter('enable_gesture_control', False)
         self.declare_parameter('target_box_height', 0.35)
+        self.declare_parameter('tracking_filter_alpha', 0.35)
+        self.declare_parameter('yaw_error_deadband', 0.04)
+        self.declare_parameter('forward_error_deadband', 0.025)
         self.declare_parameter('k_p_yaw', 1.2)
         self.declare_parameter('k_p_forward', 1.5)
         self.declare_parameter('max_linear_speed', 0.35)
@@ -66,6 +73,16 @@ class TrackingBridgeNode(Node):
 
         self._target_box_height = float(
             self.get_parameter('target_box_height').value)
+        filter_alpha = self._bounded_parameter(
+            'tracking_filter_alpha', lower=0.0, upper=1.0,
+            allow_lower=False, allow_upper=True)
+        self._tracking_filter = TargetObservationFilter(filter_alpha)
+        self._yaw_error_deadband = self._bounded_parameter(
+            'yaw_error_deadband', lower=0.0, upper=1.0,
+            allow_lower=True, allow_upper=False)
+        self._forward_error_deadband = self._bounded_parameter(
+            'forward_error_deadband', lower=0.0, upper=1.0,
+            allow_lower=True, allow_upper=False)
         self._k_p_yaw = float(self.get_parameter('k_p_yaw').value)
         self._k_p_forward = float(
             self.get_parameter('k_p_forward').value)
@@ -190,12 +207,19 @@ class TrackingBridgeNode(Node):
         self._latest_target_time = None
         self._latest_gesture = self.GESTURE_NONE
         self._latest_gesture_time = None
+        self._tracking_filter.reset()
         self._velocity_limiter.reset()
         self._command_publisher.publish(Twist())
 
     def _tracking_callback(self, message: Pose2D) -> None:
-        """Store the newest target observation for the control timer."""
-        self._latest_target = message
+        """Filter and store the newest target for the control timer."""
+        filtered = self._tracking_filter.update(
+            (message.x, message.y, message.theta))
+        filtered_message = Pose2D()
+        filtered_message.x = filtered[0]
+        filtered_message.y = filtered[1]
+        filtered_message.theta = filtered[2]
+        self._latest_target = filtered_message
         self._latest_target_time = self.get_clock().now()
 
     def _gesture_callback(self, message: Int32) -> None:
@@ -206,7 +230,7 @@ class TrackingBridgeNode(Node):
     def _publish_command(self) -> None:
         """Publish a limited command or bypass the limiter for a safe stop."""
         if self._mode == self.MODE_ACTIVE_TRACK:
-            if not self._is_fresh(
+            if self._latest_target is None or not self._is_fresh(
                 self._latest_target_time, self._target_timeout
             ):
                 self._publish_immediate_stop()
@@ -228,6 +252,9 @@ class TrackingBridgeNode(Node):
 
     def _publish_immediate_stop(self) -> None:
         """Bypass ramping for a safety stop and reset future motion to zero."""
+        self._tracking_filter.reset()
+        self._latest_target = None
+        self._latest_target_time = None
         self._velocity_limiter.reset()
         self._command_publisher.publish(Twist())
 
@@ -257,21 +284,24 @@ class TrackingBridgeNode(Node):
             return Twist()
 
         command = Twist()
-        height_error = (
-            self._target_box_height - self._latest_target.theta)
+        height_error = apply_continuous_deadband(
+            self._target_box_height - self._latest_target.theta,
+            self._forward_error_deadband,
+        )
+        horizontal_error = apply_continuous_deadband(
+            self._latest_target.x,
+            self._yaw_error_deadband,
+        )
         command.linear.x = self._clamp(
             self._k_p_forward * height_error,
             -self._max_linear_speed,
             self._max_linear_speed,
         )
         command.angular.z = self._clamp(
-            -self._k_p_yaw * self._latest_target.x,
+            -self._k_p_yaw * horizontal_error,
             -self._max_angular_speed,
             self._max_angular_speed,
         )
-
-        # TODO: Add a deadband and target filtering after measuring detector
-        # noise on recorded flight video.
         return command
 
     def _gesture_command(self) -> Twist:
@@ -304,6 +334,33 @@ class TrackingBridgeNode(Node):
         value = float(self.get_parameter(name).value)
         if not math.isfinite(value) or value <= 0.0:
             raise ValueError('%s must be finite and positive' % name)
+        return value
+
+    def _bounded_parameter(
+        self,
+        name: str,
+        lower: float,
+        upper: float,
+        allow_lower: bool,
+        allow_upper: bool,
+    ) -> float:
+        """Read one finite parameter within configured bounds."""
+        value = float(self.get_parameter(name).value)
+        lower_valid = value >= lower if allow_lower else value > lower
+        upper_valid = value <= upper if allow_upper else value < upper
+        if not math.isfinite(value) or not lower_valid or not upper_valid:
+            left_bracket = '[' if allow_lower else '('
+            right_bracket = ']' if allow_upper else ')'
+            raise ValueError(
+                '%s must be finite and in %s%s, %s%s'
+                % (
+                    name,
+                    left_bracket,
+                    lower,
+                    upper,
+                    right_bracket,
+                )
+            )
         return value
 
     @staticmethod
