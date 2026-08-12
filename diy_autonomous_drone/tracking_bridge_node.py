@@ -1,5 +1,7 @@
 """Convert vision observations or gestures into raw velocity commands."""
 
+import math
+import time
 from typing import Optional
 
 import rclpy
@@ -16,6 +18,7 @@ from diy_autonomous_drone.autonomy_modes import (
     mode_rejection_reason,
     normalized_mode,
 )
+from diy_autonomous_drone.velocity_limiter import VelocityLimiter
 
 
 class TrackingBridgeNode(Node):
@@ -42,6 +45,9 @@ class TrackingBridgeNode(Node):
         self.declare_parameter('k_p_forward', 1.5)
         self.declare_parameter('max_linear_speed', 0.35)
         self.declare_parameter('max_angular_speed', 0.4)
+        self.declare_parameter('max_linear_acceleration', 0.5)
+        self.declare_parameter('max_yaw_acceleration', 0.8)
+        self.declare_parameter('acceleration_limiter_max_dt_sec', 0.1)
         self.declare_parameter('gesture_speed', 0.25)
         self.declare_parameter('target_timeout_sec', 0.5)
         self.declare_parameter('gesture_timeout_sec', 0.3)
@@ -67,6 +73,17 @@ class TrackingBridgeNode(Node):
             self.get_parameter('max_linear_speed').value))
         self._max_angular_speed = abs(float(
             self.get_parameter('max_angular_speed').value))
+        max_linear_acceleration = self._positive_parameter(
+            'max_linear_acceleration')
+        max_yaw_acceleration = self._positive_parameter(
+            'max_yaw_acceleration')
+        limiter_max_dt = self._positive_parameter(
+            'acceleration_limiter_max_dt_sec')
+        self._velocity_limiter = VelocityLimiter(
+            max_linear_acceleration=max_linear_acceleration,
+            max_yaw_acceleration=max_yaw_acceleration,
+            max_dt=limiter_max_dt,
+        )
         self._gesture_speed = abs(float(
             self.get_parameter('gesture_speed').value))
         self._target_timeout = max(
@@ -173,6 +190,7 @@ class TrackingBridgeNode(Node):
         self._latest_target_time = None
         self._latest_gesture = self.GESTURE_NONE
         self._latest_gesture_time = None
+        self._velocity_limiter.reset()
         self._command_publisher.publish(Twist())
 
     def _tracking_callback(self, message: Pose2D) -> None:
@@ -186,13 +204,50 @@ class TrackingBridgeNode(Node):
         self._latest_gesture_time = self.get_clock().now()
 
     def _publish_command(self) -> None:
-        """Publish a fresh command, defaulting to zero on stale input."""
-        command = Twist()
+        """Publish a limited command or bypass the limiter for a safe stop."""
         if self._mode == self.MODE_ACTIVE_TRACK:
-            command = self._active_tracking_command()
+            if not self._is_fresh(
+                self._latest_target_time, self._target_timeout
+            ):
+                self._publish_immediate_stop()
+                return
+            desired_command = self._active_tracking_command()
         elif self._mode == self.MODE_GESTURE_CONTROL:
-            command = self._gesture_command()
+            if not self._is_fresh(
+                self._latest_gesture_time, self._gesture_timeout
+            ):
+                self._publish_immediate_stop()
+                return
+            desired_command = self._gesture_command()
+        else:
+            self._publish_immediate_stop()
+            return
+
+        command = self._limited_command(desired_command)
         self._command_publisher.publish(command)
+
+    def _publish_immediate_stop(self) -> None:
+        """Bypass ramping for a safety stop and reset future motion to zero."""
+        self._velocity_limiter.reset()
+        self._command_publisher.publish(Twist())
+
+    def _limited_command(self, desired: Twist) -> Twist:
+        """Convert a desired command through the time-based limiter."""
+        limited = self._velocity_limiter.limit(
+            (
+                desired.linear.x,
+                desired.linear.y,
+                desired.linear.z,
+                desired.angular.z,
+            ),
+            time.monotonic(),
+        )
+        command = Twist()
+        command.linear.x = limited[0]
+        command.linear.y = limited[1]
+        command.linear.z = limited[2]
+        command.angular.z = limited[3]
+        return command
 
     def _active_tracking_command(self) -> Twist:
         """Return a bounded P-controller command for a fresh target."""
@@ -215,8 +270,8 @@ class TrackingBridgeNode(Node):
             self._max_angular_speed,
         )
 
-        # TODO: Add a deadband, target filtering, and acceleration limiting
-        # after measuring detector noise on recorded flight video.
+        # TODO: Add a deadband and target filtering after measuring detector
+        # noise on recorded flight video.
         return command
 
     def _gesture_command(self) -> Twist:
@@ -243,6 +298,13 @@ class TrackingBridgeNode(Node):
             return False
         age = self.get_clock().now() - timestamp
         return age.nanoseconds / 1_000_000_000.0 <= timeout
+
+    def _positive_parameter(self, name: str) -> float:
+        """Read one required finite positive safety parameter."""
+        value = float(self.get_parameter(name).value)
+        if not math.isfinite(value) or value <= 0.0:
+            raise ValueError('%s must be finite and positive' % name)
+        return value
 
     @staticmethod
     def _clamp(value: float, lower: float, upper: float) -> float:

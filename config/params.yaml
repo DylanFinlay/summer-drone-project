@@ -30,6 +30,11 @@ tracking_bridge_node:
     k_p_forward: 1.5
     max_linear_speed: 0.35
     max_angular_speed: 0.4
+    # Acceleration limits apply during valid autonomous motion. Safety stops
+    # bypass ramping and publish zero immediately.
+    max_linear_acceleration: 0.5  # metres per second squared
+    max_yaw_acceleration: 0.8  # radians per second squared
+    acceleration_limiter_max_dt_sec: 0.1  # timer-delay protection
     gesture_speed: 0.25
     target_timeout_sec: 0.5
     gesture_timeout_sec: 0.3

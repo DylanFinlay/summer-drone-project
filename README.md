@@ -123,6 +123,14 @@ ArduPilot Guided mode. The physical RC mode switch remains the master gate.
 Process-level toggles such as `enable_vision` still require a relaunch, so start
 the camera in advance when a live switch into active tracking is planned.
 
+Valid tracking and gesture commands pass through a vector acceleration limiter
+before reaching the safety supervisor. The conservative defaults permit
+`0.5 m/s^2` of linear acceleration and `0.8 rad/s^2` of yaw acceleration.
+Normal corrections and direction reversals ramp smoothly. Hover, stale input,
+mode changes, and other safety stops bypass ramping and publish zero
+immediately. Configure these limits in `config/params.yaml` only after testing
+them in SITL.
+
 Launch toggles:
 
 - `autonomy_mode`: `hover`, `active_track`, or `gesture_control`

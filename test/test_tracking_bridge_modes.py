@@ -42,6 +42,10 @@ class TestTrackingBridgeModeChanges(unittest.TestCase):
         try:
             node._latest_target = Pose2D()
             node._latest_target_time = node.get_clock().now()
+            node._velocity_limiter.limit(
+                (1.0, 0.0, 0.0, 0.0), 0.0)
+            node._velocity_limiter.limit(
+                (1.0, 0.0, 0.0, 0.0), 0.1)
 
             result = node.set_parameters([
                 Parameter('autonomy_mode', value='active_track'),
@@ -49,6 +53,10 @@ class TestTrackingBridgeModeChanges(unittest.TestCase):
             self.assertTrue(result.successful)
             self.assertEqual(node._mode, node.MODE_ACTIVE_TRACK)
             self.assertIsNone(node._latest_target)
+            self.assertEqual(
+                node._velocity_limiter.current,
+                (0.0, 0.0, 0.0, 0.0),
+            )
             self.assertEqual(len(publisher.messages), 1)
 
             result = node.set_parameters([
