@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 import rclpy
 from geometry_msgs.msg import Pose2D
 from rclpy.node import Node
-from std_msgs.msg import Int32
+from std_msgs.msg import Bool, Int32
 
 from diy_autonomous_drone.target_selector import BoundingBox, TargetSelector
 
@@ -99,6 +99,8 @@ class VisionNode(Node):
 
         self._tracking_publisher = self.create_publisher(
             Pose2D, '/drone/target_tracking_box', 10)
+        self._target_visibility_publisher = self.create_publisher(
+            Bool, '/drone/target_visible', 10)
         self._gesture_publisher = self.create_publisher(
             Int32, '/drone/active_gesture', 10)
 
@@ -248,6 +250,10 @@ class VisionNode(Node):
             tracking_message.y = self._clamp(center_y, -1.0, 1.0)
             tracking_message.theta = self._clamp(box_height, 0.0, 1.0)
             self._tracking_publisher.publish(tracking_message)
+
+        visibility_message = Bool()
+        visibility_message.data = tracking_box is not None
+        self._target_visibility_publisher.publish(visibility_message)
 
         gesture_message = Int32()
         gesture_message.data = int(gesture_id)

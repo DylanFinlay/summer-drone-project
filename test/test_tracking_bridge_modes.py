@@ -7,7 +7,9 @@ try:
     import rclpy
     from geometry_msgs.msg import Pose2D
     from rclpy.parameter import Parameter
+    from std_msgs.msg import Bool
 
+    from diy_autonomous_drone.target_loss_state import TargetTrackingState
     from diy_autonomous_drone.tracking_bridge_node import TrackingBridgeNode
     ROS_AVAILABLE = True
 except ImportError:
@@ -56,6 +58,10 @@ class TestTrackingBridgeModeChanges(unittest.TestCase):
             self.assertIsNone(node._latest_target)
             self.assertIsNone(node._tracking_filter.current)
             self.assertEqual(
+                node._target_loss_state.state,
+                TargetTrackingState.HOVER,
+            )
+            self.assertEqual(
                 node._velocity_limiter.current,
                 (0.0, 0.0, 0.0, 0.0),
             )
@@ -89,6 +95,51 @@ class TestTrackingBridgeModeChanges(unittest.TestCase):
             ])[0]
             self.assertFalse(result.successful)
             self.assertTrue(node._gesture_enabled)
+        finally:
+            node.destroy_node()
+            if owns_context:
+                rclpy.shutdown()
+
+    def test_visibility_events_drive_explicit_loss_states(self):
+        """A missing target stops immediately and permits reacquisition."""
+        owns_context = not rclpy.ok()
+        if owns_context:
+            rclpy.init()
+
+        node = TrackingBridgeNode()
+        publisher = CapturingPublisher()
+        node._command_publisher = publisher
+        try:
+            result = node.set_parameters([
+                Parameter('autonomy_mode', value='active_track'),
+            ])[0]
+            self.assertTrue(result.successful)
+
+            target = Pose2D()
+            target.x = 0.2
+            target.theta = 0.3
+            node._tracking_callback(target)
+            self.assertEqual(
+                node._target_loss_state.state,
+                TargetTrackingState.TRACKING,
+            )
+
+            missing = Bool()
+            missing.data = False
+            node._target_visibility_callback(missing)
+            self.assertEqual(
+                node._target_loss_state.state,
+                TargetTrackingState.TEMPORARILY_LOST,
+            )
+            self.assertIsNone(node._latest_target)
+            self.assertIsNone(node._tracking_filter.current)
+            self.assertGreaterEqual(len(publisher.messages), 2)
+
+            node._tracking_callback(target)
+            self.assertEqual(
+                node._target_loss_state.state,
+                TargetTrackingState.TRACKING,
+            )
         finally:
             node.destroy_node()
             if owns_context:

@@ -175,6 +175,22 @@ ambiguous association, publishes no target on every missed frame, clears the
 identity after repeated misses, and requires a new three-frame confirmation
 before motion can resume.
 
+The command generator has three explicit target states, published continuously
+on `/drone/tracking_state`:
+
+- `hover`: active tracking has no valid target and commands zero velocity.
+- `tracking`: a selected target is visible and fresh.
+- `temporarily_lost`: a previously tracked target disappeared; zero velocity
+  is published immediately while a bounded reacquisition window runs.
+
+The vision node publishes `/drone/target_visible` for every processed frame.
+One missing frame moves `tracking` to `temporarily_lost` without waiting for a
+watchdog. A target reacquired within `target_loss_grace_sec` (default `0.75`
+seconds) returns to `tracking` from rest. Expiry returns to `hover`. Loss clears
+the target filter so an old person's position cannot affect reacquisition. If
+camera or visibility messages stop completely, `target_timeout_sec` remains an
+independent fallback into the same safe loss path.
+
 This is intentionally conservative and intended for a demonstration with one
 participant in a clear area. `require_single_person` can later be disabled,
 but a deliberate operator selection mechanism should be implemented before

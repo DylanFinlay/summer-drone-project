@@ -42,6 +42,8 @@ tracking_bridge_node:
     acceleration_limiter_max_dt_sec: 0.1  # timer-delay protection
     gesture_speed: 0.25
     target_timeout_sec: 0.5
+    # Time allowed to reacquire after stopping on an explicitly missing target.
+    target_loss_grace_sec: 0.75
     gesture_timeout_sec: 0.3
     command_rate_hz: 20
 

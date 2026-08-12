@@ -9,7 +9,7 @@ from geometry_msgs.msg import Pose2D, Twist
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from std_msgs.msg import Int32
+from std_msgs.msg import Bool, Int32, String
 
 from diy_autonomous_drone.autonomy_modes import (
     MODE_ACTIVE_TRACK,
@@ -21,6 +21,10 @@ from diy_autonomous_drone.autonomy_modes import (
 from diy_autonomous_drone.tracking_filter import (
     TargetObservationFilter,
     apply_continuous_deadband,
+)
+from diy_autonomous_drone.target_loss_state import (
+    TargetLossStateMachine,
+    TargetTrackingState,
 )
 from diy_autonomous_drone.velocity_limiter import VelocityLimiter
 
@@ -57,6 +61,7 @@ class TrackingBridgeNode(Node):
         self.declare_parameter('acceleration_limiter_max_dt_sec', 0.1)
         self.declare_parameter('gesture_speed', 0.25)
         self.declare_parameter('target_timeout_sec', 0.5)
+        self.declare_parameter('target_loss_grace_sec', 0.75)
         self.declare_parameter('gesture_timeout_sec', 0.3)
         self.declare_parameter('command_rate_hz', 20)
 
@@ -105,6 +110,8 @@ class TrackingBridgeNode(Node):
             self.get_parameter('gesture_speed').value))
         self._target_timeout = max(
             0.05, float(self.get_parameter('target_timeout_sec').value))
+        self._target_loss_state = TargetLossStateMachine(
+            self._positive_parameter('target_loss_grace_sec'))
         self._gesture_timeout = max(
             0.05, float(self.get_parameter('gesture_timeout_sec').value))
         command_rate = max(
@@ -117,10 +124,18 @@ class TrackingBridgeNode(Node):
 
         self._command_publisher = self.create_publisher(
             Twist, '/drone/cmd_vel_raw', 10)
+        self._tracking_state_publisher = self.create_publisher(
+            String, '/drone/tracking_state', 10)
         self._tracking_subscription = self.create_subscription(
             Pose2D,
             '/drone/target_tracking_box',
             self._tracking_callback,
+            10,
+        )
+        self._target_visibility_subscription = self.create_subscription(
+            Bool,
+            '/drone/target_visible',
+            self._target_visibility_callback,
             10,
         )
         self._gesture_subscription = self.create_subscription(
@@ -134,6 +149,7 @@ class TrackingBridgeNode(Node):
 
         self.get_logger().info(
             'Tracking bridge started in %s mode.' % self._mode)
+        self._publish_tracking_state()
 
     def _startup_mode(self, requested: str, gesture_enabled: bool) -> str:
         """Fail closed to hover for an unsafe launch-time mode request."""
@@ -208,11 +224,16 @@ class TrackingBridgeNode(Node):
         self._latest_gesture = self.GESTURE_NONE
         self._latest_gesture_time = None
         self._tracking_filter.reset()
+        previous_state = self._target_loss_state.state
+        self._target_loss_state.reset()
         self._velocity_limiter.reset()
         self._command_publisher.publish(Twist())
+        self._report_tracking_state_change(previous_state)
 
     def _tracking_callback(self, message: Pose2D) -> None:
         """Filter and store the newest target for the control timer."""
+        if self._mode != self.MODE_ACTIVE_TRACK:
+            return
         filtered = self._tracking_filter.update(
             (message.x, message.y, message.theta))
         filtered_message = Pose2D()
@@ -221,6 +242,15 @@ class TrackingBridgeNode(Node):
         filtered_message.theta = filtered[2]
         self._latest_target = filtered_message
         self._latest_target_time = self.get_clock().now()
+        previous_state = self._target_loss_state.state
+        self._target_loss_state.target_seen()
+        self._report_tracking_state_change(previous_state)
+
+    def _target_visibility_callback(self, message: Bool) -> None:
+        """Stop immediately when a processed frame has no safe target."""
+        if self._mode != self.MODE_ACTIVE_TRACK or message.data:
+            return
+        self._enter_temporary_target_loss(time.monotonic())
 
     def _gesture_callback(self, message: Int32) -> None:
         """Store the newest gesture for the control timer."""
@@ -230,33 +260,100 @@ class TrackingBridgeNode(Node):
     def _publish_command(self) -> None:
         """Publish a limited command or bypass the limiter for a safe stop."""
         if self._mode == self.MODE_ACTIVE_TRACK:
-            if self._latest_target is None or not self._is_fresh(
-                self._latest_target_time, self._target_timeout
+            now = time.monotonic()
+            tracking_state = self._target_loss_state.state
+            target_is_stale = (
+                self._latest_target is None
+                or not self._is_fresh(
+                    self._latest_target_time,
+                    self._target_timeout,
+                )
+            )
+            if (
+                tracking_state == TargetTrackingState.TRACKING
+                and target_is_stale
             ):
-                self._publish_immediate_stop()
+                self._enter_temporary_target_loss(now)
+                return
+
+            if tracking_state == TargetTrackingState.TEMPORARILY_LOST:
+                previous_state = self._target_loss_state.state
+                self._target_loss_state.update(now)
+                if (
+                    self._target_loss_state.state
+                    == TargetTrackingState.HOVER
+                ):
+                    self._publish_immediate_stop(clear_target=True)
+                else:
+                    self._publish_immediate_stop(clear_target=False)
+                self._report_tracking_state_change(previous_state)
+                return
+
+            if tracking_state != TargetTrackingState.TRACKING:
+                self._publish_immediate_stop(clear_target=True)
+                self._publish_tracking_state()
                 return
             desired_command = self._active_tracking_command()
         elif self._mode == self.MODE_GESTURE_CONTROL:
             if not self._is_fresh(
                 self._latest_gesture_time, self._gesture_timeout
             ):
-                self._publish_immediate_stop()
+                self._publish_immediate_stop(clear_target=True)
                 return
             desired_command = self._gesture_command()
         else:
-            self._publish_immediate_stop()
+            self._publish_immediate_stop(clear_target=True)
+            self._publish_tracking_state()
             return
 
         command = self._limited_command(desired_command)
         self._command_publisher.publish(command)
+        self._publish_tracking_state()
 
-    def _publish_immediate_stop(self) -> None:
-        """Bypass ramping for a safety stop and reset future motion to zero."""
-        self._tracking_filter.reset()
-        self._latest_target = None
-        self._latest_target_time = None
+    def _enter_temporary_target_loss(self, timestamp: float) -> None:
+        """Transition from tracking and publish an immediate zero command."""
+        previous_state = self._target_loss_state.state
+        self._target_loss_state.target_missed(timestamp)
+        if (
+            self._target_loss_state.state
+            == TargetTrackingState.TEMPORARILY_LOST
+        ):
+            self._publish_immediate_stop(clear_target=True)
+        self._report_tracking_state_change(previous_state)
+
+    def _publish_immediate_stop(self, clear_target: bool) -> None:
+        """Bypass ramping for a safety stop and optionally clear perception."""
+        if clear_target:
+            self._tracking_filter.reset()
+            self._latest_target = None
+            self._latest_target_time = None
         self._velocity_limiter.reset()
         self._command_publisher.publish(Twist())
+
+    def _report_tracking_state_change(
+        self, previous_state: TargetTrackingState
+    ) -> None:
+        """Log and publish one explicit target state transition."""
+        current_state = self._target_loss_state.state
+        if current_state != previous_state:
+            if current_state == TargetTrackingState.TRACKING:
+                self.get_logger().info(
+                    'Tracking state: tracking; fresh target acquired.')
+            elif current_state == TargetTrackingState.TEMPORARILY_LOST:
+                self.get_logger().warning(
+                    'Tracking state: temporarily_lost; immediate hover and '
+                    'bounded reacquisition window active.')
+            else:
+                self.get_logger().warning(
+                    'Tracking state: hover; target-loss grace period '
+                    'expired or tracking was disabled.')
+        self._publish_tracking_state()
+
+    def _publish_tracking_state(self) -> None:
+        """Publish the current explicit target-tracking state."""
+        message = String()
+        message.data = self._target_loss_state.state.value
+        self._tracking_state_publisher.publish(message)
 
     def _limited_command(self, desired: Twist) -> Twist:
         """Convert a desired command through the time-based limiter."""
