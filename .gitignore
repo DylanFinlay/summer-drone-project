@@ -1,7 +1,9 @@
-__pycache__/
-*.pyc
 build/
 install/
 log/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+yolo*.pt
 .vscode/
 .DS_Store

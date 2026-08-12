@@ -47,6 +47,11 @@ def generate_launch_description():
             description='Start the camera/perception node.',
         ),
         DeclareLaunchArgument(
+            'enable_object_detection',
+            default_value='true',
+            description='Run YOLO person detection in the vision node.',
+        ),
+        DeclareLaunchArgument(
             'enable_tracking',
             default_value='true',
             description='Start the autonomous command generator.',
@@ -84,7 +89,15 @@ def generate_launch_description():
             executable='vision_node',
             name='vision_node',
             output='screen',
-            parameters=[parameter_file],
+            parameters=[
+                parameter_file,
+                {
+                    'enable_object_detection': ParameterValue(
+                        LaunchConfiguration('enable_object_detection'),
+                        value_type=bool,
+                    ),
+                },
+            ],
             condition=IfCondition(LaunchConfiguration('enable_vision')),
         ),
         Node(

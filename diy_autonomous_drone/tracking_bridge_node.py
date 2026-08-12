@@ -4,21 +4,26 @@ from typing import Optional
 
 import rclpy
 from geometry_msgs.msg import Pose2D, Twist
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from std_msgs.msg import Int32
+
+from diy_autonomous_drone.autonomy_modes import (
+    MODE_ACTIVE_TRACK,
+    MODE_GESTURE_CONTROL,
+    MODE_HOVER,
+    mode_rejection_reason,
+    normalized_mode,
+)
 
 
 class TrackingBridgeNode(Node):
-    """Generate bounded commands for one explicitly configured demo mode."""
+    """Generate bounded commands for one operator-selected demo mode."""
 
-    MODE_HOVER = 'hover'
-    MODE_ACTIVE_TRACK = 'active_track'
-    MODE_GESTURE_CONTROL = 'gesture_control'
-    VALID_MODES = {
-        MODE_HOVER,
-        MODE_ACTIVE_TRACK,
-        MODE_GESTURE_CONTROL,
-    }
+    MODE_HOVER = MODE_HOVER
+    MODE_ACTIVE_TRACK = MODE_ACTIVE_TRACK
+    MODE_GESTURE_CONTROL = MODE_GESTURE_CONTROL
 
     GESTURE_NONE = 0
     GESTURE_UP = 2
@@ -42,11 +47,16 @@ class TrackingBridgeNode(Node):
         self.declare_parameter('gesture_timeout_sec', 0.3)
         self.declare_parameter('command_rate_hz', 20)
 
-        requested_mode = str(
-            self.get_parameter('autonomy_mode').value).strip().lower()
-        gesture_enabled = bool(
+        requested_mode = normalized_mode(
+            self.get_parameter('autonomy_mode').value)
+        self._gesture_enabled = bool(
             self.get_parameter('enable_gesture_control').value)
-        self._mode = self._validated_mode(requested_mode, gesture_enabled)
+        self._mode = self._startup_mode(
+            requested_mode, self._gesture_enabled)
+        if self._mode != requested_mode:
+            self.set_parameters([
+                Parameter('autonomy_mode', value=self._mode),
+            ])
 
         self._target_box_height = float(
             self.get_parameter('target_box_height').value)
@@ -83,21 +93,87 @@ class TrackingBridgeNode(Node):
             Int32, '/drone/active_gesture', self._gesture_callback, 10)
         self._command_timer = self.create_timer(
             1.0 / float(command_rate), self._publish_command)
+        self.add_on_set_parameters_callback(
+            self._validate_parameter_update_callback)
+        self.add_post_set_parameters_callback(
+            self._apply_parameter_update_callback)
 
         self.get_logger().info(
             'Tracking bridge started in %s mode.' % self._mode)
 
-    def _validated_mode(self, requested: str, gesture_enabled: bool) -> str:
-        """Fail closed to hover for unsupported or disabled modes."""
-        if requested not in self.VALID_MODES:
-            self.get_logger().error(
-                'Unknown autonomy mode %r; falling back to hover.' % requested)
-            return self.MODE_HOVER
-        if requested == self.MODE_GESTURE_CONTROL and not gesture_enabled:
+    def _startup_mode(self, requested: str, gesture_enabled: bool) -> str:
+        """Fail closed to hover for an unsafe launch-time mode request."""
+        rejection_reason = mode_rejection_reason(
+            requested, gesture_enabled)
+        if rejection_reason is None:
+            return requested
+        self.get_logger().error(
+            '%s; falling back to hover.' % rejection_reason)
+        return self.MODE_HOVER
+
+    def _validate_parameter_update_callback(
+        self, parameters
+    ) -> SetParametersResult:
+        """Reject invalid or unsafe live feature-mode changes."""
+        requested_mode = self._mode
+        gesture_enabled = self._gesture_enabled
+
+        for parameter in parameters:
+            if parameter.name == 'autonomy_mode':
+                if parameter.type_ != Parameter.Type.STRING:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='autonomy_mode must be a string',
+                    )
+                requested_mode = normalized_mode(parameter.value)
+                if parameter.value != requested_mode:
+                    return SetParametersResult(
+                        successful=False,
+                        reason=(
+                            'use the canonical autonomy_mode name %r'
+                            % requested_mode
+                        ),
+                    )
+            elif parameter.name == 'enable_gesture_control':
+                if parameter.type_ != Parameter.Type.BOOL:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='enable_gesture_control must be a boolean',
+                    )
+                gesture_enabled = bool(parameter.value)
+
+        rejection_reason = mode_rejection_reason(
+            requested_mode, gesture_enabled)
+        if rejection_reason is not None:
+            return SetParametersResult(
+                successful=False, reason=rejection_reason)
+
+        return SetParametersResult(successful=True)
+
+    def _apply_parameter_update_callback(self, parameters) -> None:
+        """Apply a committed mode change and invalidate earlier input."""
+        previous_mode = self._mode
+        for parameter in parameters:
+            if parameter.name == 'autonomy_mode':
+                self._mode = normalized_mode(parameter.value)
+            elif parameter.name == 'enable_gesture_control':
+                self._gesture_enabled = bool(parameter.value)
+
+        if self._mode != previous_mode:
+            self._stop_and_clear_inputs()
             self.get_logger().warning(
-                'Gesture control is disabled; falling back to hover.')
-            return self.MODE_HOVER
-        return requested
+                'Autonomy mode changed from %s to %s; published stop and '
+                'waiting for fresh input.'
+                % (previous_mode, self._mode)
+            )
+
+    def _stop_and_clear_inputs(self) -> None:
+        """Stop immediately and invalidate data from the previous mode."""
+        self._latest_target = None
+        self._latest_target_time = None
+        self._latest_gesture = self.GESTURE_NONE
+        self._latest_gesture_time = None
+        self._command_publisher.publish(Twist())
 
     def _tracking_callback(self, message: Pose2D) -> None:
         """Store the newest target observation for the control timer."""

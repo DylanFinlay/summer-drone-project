@@ -5,6 +5,19 @@ vision_node:
     frame_width: 640
     frame_height: 480
     fps: 20
+    enable_object_detection: true
+    detector_model: yolo11n.pt
+    detector_device: cpu
+    detector_confidence: 0.55
+    detector_iou: 0.5
+    detector_image_size: 320
+    person_class_id: 0
+    require_single_person: true
+    acquire_confirm_frames: 3
+    acquire_iou_threshold: 0.3
+    lock_iou_threshold: 0.15
+    ambiguity_iou_margin: 0.05
+    max_missed_frames: 5
 
 tracking_bridge_node:
   ros__parameters:

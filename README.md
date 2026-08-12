@@ -22,6 +22,25 @@ uses a subset of its plugins. The default connection is
 `serial:///dev/ttyAMA0:57600`; it can be replaced at launch with `fcu_url:=...`
 for a USB serial device, UDP, or ArduPilot SITL.
 
+## Vision setup
+
+The active-tracking MVP uses an Ultralytics YOLO11 nano detector. Create the
+Python environment with access to apt-installed ROS and Picamera2 packages,
+then build the ROS workspace while that environment is active:
+
+```bash
+sudo apt install python3-venv
+python3 -m venv --system-site-packages ~/drone_venv
+source ~/drone_venv/bin/activate
+python -m pip install -r requirements-vision.txt
+colcon build --symlink-install
+```
+
+The default `yolo11n.pt` model may be downloaded by Ultralytics the first time
+it is loaded. Do that while internet access is available, before field tests.
+Alternatively, put the model on the Pi and set `detector_model` in
+`config/params.yaml` to its absolute path.
+
 ## Demo modes
 
 The launch file defaults to the safest useful configuration: no camera and a
@@ -44,6 +63,11 @@ ros2 launch diy_autonomous_drone drone_autonomous.launch.py \
 ros2 launch diy_autonomous_drone drone_autonomous.launch.py \
   autonomy_mode:=active_track enable_vision:=true \
   enable_fc_interface:=false
+
+# Test camera capture without loading or running YOLO.
+ros2 launch diy_autonomous_drone drone_autonomous.launch.py \
+  enable_vision:=true enable_object_detection:=false \
+  enable_fc_interface:=false
 ```
 
 Gesture control is intentionally disabled by default. To test it later, launch
@@ -51,11 +75,40 @@ with `autonomy_mode:=gesture_control enable_gesture_control:=true`, and keep
 the same physical RC Guided-mode gate. A camera gesture never grants flight
 authority.
 
+The motion mode can also be changed while the stack is running. Every accepted
+transition immediately publishes zero, clears observations from the previous
+mode, and waits for fresh input before movement can resume:
+
+```bash
+# Keep perception available while initially holding zero in hover mode.
+ros2 launch diy_autonomous_drone drone_autonomous.launch.py \
+  autonomy_mode:=hover enable_vision:=true
+
+# Run these from a second terminal after sourcing the workspace.
+ros2 param set /tracking_bridge_node autonomy_mode hover
+ros2 param set /tracking_bridge_node autonomy_mode active_track
+
+# Gesture control requires a deliberate two-step unlock.
+ros2 param set /tracking_bridge_node enable_gesture_control true
+ros2 param set /tracking_bridge_node autonomy_mode gesture_control
+
+# Return to hover before locking the experimental feature again.
+ros2 param set /tracking_bridge_node autonomy_mode hover
+ros2 param set /tracking_bridge_node enable_gesture_control false
+```
+
+Invalid modes are rejected without changing the active mode. This ROS setting
+only chooses what command generator runs; it cannot arm the vehicle or select
+ArduPilot Guided mode. The physical RC mode switch remains the master gate.
+Process-level toggles such as `enable_vision` still require a relaunch, so start
+the camera in advance when a live switch into active tracking is planned.
+
 Launch toggles:
 
 - `autonomy_mode`: `hover`, `active_track`, or `gesture_control`
 - `enable_gesture_control`: unlocks the experimental gesture mode
 - `enable_vision`: starts camera capture and inference hooks
+- `enable_object_detection`: loads and runs the YOLO person detector
 - `enable_tracking`: starts autonomous command generation
 - `enable_fc_interface`: starts MAVROS and its command safety adapter
 - `fcu_url`: selects the MAVROS serial, UDP, TCP, or SITL connection
@@ -76,6 +129,21 @@ The printed camera carrier should use the M3.5 x 13 mm damping balls as its
 vibration-isolation elements. VHB can retain or bond parts of the mount, but
 use a captive mechanical design or safety tether as well.
 
+## Active-tracking MVP behavior
+
+YOLO is filtered to the configured person class. For safety, the default
+selector only acquires when exactly one person is visible and requires three
+consecutive, spatially consistent detections. Once acquired, it keeps the
+person whose bounding box overlaps the prior locked box. It refuses an
+ambiguous association, publishes no target on every missed frame, clears the
+identity after repeated misses, and requires a new three-frame confirmation
+before motion can resume.
+
+This is intentionally conservative and intended for a demonstration with one
+participant in a clear area. `require_single_person` can later be disabled,
+but a deliberate operator selection mechanism should be implemented before
+using that setting around multiple people.
+
 ## Minimum test order
 
 1. Configure and prove manual Stabilize, AltHold, Loiter, and RTL flight.
@@ -92,3 +160,7 @@ Before real autonomous flight, configure ArduPilot's RC, battery, EKF,
 geofence, and Guided-command timeout failsafes. Start with the conservative
 speed and timeout values in `config/params.yaml`; increase them only after
 reviewing flight and vibration logs.
+
+Use the [ArduPilot RC setup checklist](docs/ARDUPILOT_RC_SETUP.md) and its
+planning worksheet before hardware testing. The worksheet deliberately leaves
+all receiver-specific calibration values blank until they can be measured.

@@ -1,0 +1,44 @@
+# Planning worksheet only. Do not load this file into ArduPilot.
+# Replace null values only after observing and calibrating the real hardware.
+status: NOT_CALIBRATED_DO_NOT_FLY
+
+aircraft:
+  flight_controller: MicoAir H743 v2
+  ardupilot_firmware_version: null
+  transmitter_model: null
+  receiver_model: null
+  receiver_protocol: null
+
+authority_design:
+  # The receiver connects directly to the flight controller. ROS never grants
+  # itself authority, arms the vehicle, or changes the ArduPilot flight mode.
+  receiver_connected_directly_to_fc: true
+  pi_movement_requires_ardupilot_mode: GUIDED
+  preferred_flight_mode_channel: 5
+  actual_flight_mode_channel: null
+  desired_three_position_order:
+    - STABILIZE
+    - LOITER
+    - GUIDED
+  rtl_aux_channel: null
+  rtl_aux_switch_verified: false
+
+# Record the values produced by ArduPilot radio calibration. Never copy these
+# values from another transmitter/receiver pair.
+calibrated_channels:
+  channel_1: {function: roll, min: null, trim: null, max: null, reversed: null}
+  channel_2: {function: pitch, min: null, trim: null, max: null, reversed: null}
+  channel_3: {function: throttle, min: null, trim: null, max: null, reversed: null}
+  channel_4: {function: yaw, min: null, trim: null, max: null, reversed: null}
+  flight_mode_channel: {channel: null, switch_pwm_values: []}
+  rtl_aux: {channel: null, low_pwm: null, high_pwm: null}
+
+verification:
+  radio_calibration_completed_props_removed: false
+  every_mode_switch_position_verified_in_gcs: false
+  transmitter_off_failsafe_verified_props_removed: false
+  mavros_reports_stabilize: false
+  mavros_reports_loiter: false
+  mavros_reports_guided: false
+  rtl_behavior_proven_in_manual_flight: false
+  known_good_parameter_export_path: null

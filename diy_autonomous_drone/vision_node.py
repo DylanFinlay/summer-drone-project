@@ -7,6 +7,8 @@ from geometry_msgs.msg import Pose2D
 from rclpy.node import Node
 from std_msgs.msg import Int32
 
+from diy_autonomous_drone.target_selector import BoundingBox, TargetSelector
+
 try:
     import cv2
 except ImportError:  # pragma: no cover - depends on the target platform.
@@ -16,6 +18,11 @@ try:
     from picamera2 import Picamera2
 except ImportError:  # pragma: no cover - depends on the target platform.
     Picamera2 = None
+
+try:
+    from ultralytics import YOLO
+except ImportError:  # pragma: no cover - optional vision dependency.
+    YOLO = None
 
 
 class VisionNode(Node):
@@ -32,6 +39,19 @@ class VisionNode(Node):
         self.declare_parameter('frame_width', 640)
         self.declare_parameter('frame_height', 480)
         self.declare_parameter('fps', 20)
+        self.declare_parameter('enable_object_detection', True)
+        self.declare_parameter('detector_model', 'yolo11n.pt')
+        self.declare_parameter('detector_device', 'cpu')
+        self.declare_parameter('detector_confidence', 0.55)
+        self.declare_parameter('detector_iou', 0.5)
+        self.declare_parameter('detector_image_size', 320)
+        self.declare_parameter('person_class_id', 0)
+        self.declare_parameter('require_single_person', True)
+        self.declare_parameter('acquire_confirm_frames', 3)
+        self.declare_parameter('acquire_iou_threshold', 0.3)
+        self.declare_parameter('lock_iou_threshold', 0.15)
+        self.declare_parameter('ambiguity_iou_margin', 0.05)
+        self.declare_parameter('max_missed_frames', 5)
 
         self._camera_index = int(
             self.get_parameter('camera_index').value)
@@ -42,6 +62,40 @@ class VisionNode(Node):
         self._frame_height = max(
             1, int(self.get_parameter('frame_height').value))
         self._fps = max(1, int(self.get_parameter('fps').value))
+        self._detection_enabled = bool(
+            self.get_parameter('enable_object_detection').value)
+        self._detector_model_path = str(
+            self.get_parameter('detector_model').value)
+        self._detector_device = str(
+            self.get_parameter('detector_device').value)
+        self._detector_confidence = self._clamp(
+            float(self.get_parameter('detector_confidence').value),
+            0.0,
+            1.0,
+        )
+        self._detector_iou = self._clamp(
+            float(self.get_parameter('detector_iou').value), 0.0, 1.0)
+        self._detector_image_size = max(
+            32, int(self.get_parameter('detector_image_size').value))
+        self._person_class_id = max(
+            0, int(self.get_parameter('person_class_id').value))
+
+        self._target_selector = TargetSelector(
+            acquire_confirm_frames=max(
+                1,
+                int(self.get_parameter('acquire_confirm_frames').value),
+            ),
+            acquire_iou_threshold=float(
+                self.get_parameter('acquire_iou_threshold').value),
+            lock_iou_threshold=float(
+                self.get_parameter('lock_iou_threshold').value),
+            ambiguity_iou_margin=float(
+                self.get_parameter('ambiguity_iou_margin').value),
+            max_missed_frames=max(
+                0, int(self.get_parameter('max_missed_frames').value)),
+            require_single_person=bool(
+                self.get_parameter('require_single_person').value),
+        )
 
         self._tracking_publisher = self.create_publisher(
             Pose2D, '/drone/target_tracking_box', 10)
@@ -51,6 +105,9 @@ class VisionNode(Node):
         self._capture = None
         self._capture_backend = None
         self._capture_failures = 0
+        self._detector = None
+        self._inference_failures = 0
+        self._load_detector()
         self._open_camera()
         self._frame_timer = self.create_timer(
             1.0 / float(self._fps), self._process_next_frame)
@@ -64,6 +121,28 @@ class VisionNode(Node):
                 self._fps,
             )
         )
+
+    def _load_detector(self) -> None:
+        """Load the configured YOLO detector, failing closed on any error."""
+        if not self._detection_enabled:
+            self.get_logger().info('YOLO person detection is disabled.')
+            return
+        if YOLO is None:
+            self.get_logger().error(
+                'Ultralytics is unavailable; target output is disabled.')
+            return
+
+        try:
+            self._detector = YOLO(self._detector_model_path)
+        except Exception as error:
+            self.get_logger().error(
+                'Unable to load YOLO model %r: %s'
+                % (self._detector_model_path, error))
+            return
+
+        self.get_logger().info(
+            'Loaded YOLO person detector %r on %s.'
+            % (self._detector_model_path, self._detector_device))
 
     def _open_camera(self) -> None:
         """Open Picamera2 when available, then fall back to OpenCV."""
@@ -177,19 +256,85 @@ class VisionNode(Node):
     def _infer_observations(
         self, frame: object
     ) -> Tuple[Optional[Tuple[float, float, float]], int]:
-        """Return normalized tracking data and a gesture identifier.
+        """Detect and lock one person, returning a normalized observation.
 
         The tracking tuple is ``(center_x, center_y, box_height)``. A missing
         target is represented by ``None`` so downstream watchdogs can detect
         target loss. Gesture IDs are 0=None, 1=Unlock, 2=Up, 3=Down, 4=Left,
         and 5=Right.
         """
-        del frame
-        # TODO: Run YOLO and convert the selected bounding box to normalized
-        # coordinates. Keep publishing disabled when no valid target exists.
+        tracking_box = None
+        if self._detector is not None:
+            detections = self._detect_people(frame)
+            frame_height, frame_width = frame.shape[:2]
+            was_locked = self._target_selector.is_locked
+            target = self._target_selector.update(
+                detections,
+                frame_width,
+                frame_height,
+            )
+            is_locked = self._target_selector.is_locked
+            if is_locked and not was_locked:
+                self.get_logger().info('Person target acquired and locked.')
+            elif was_locked and not is_locked:
+                self.get_logger().warning(
+                    'Person target lock lost; commanding a stop.')
+            if target is not None:
+                tracking_box = target.normalized_pose(
+                    frame_width, frame_height)
+
         # TODO: Run MediaPipe Pose and replace GESTURE_NONE with a classified
         # and suitably debounced gesture ID.
-        return None, self.GESTURE_NONE
+        return tracking_box, self.GESTURE_NONE
+
+    def _detect_people(self, frame: object) -> Tuple[BoundingBox, ...]:
+        """Run one YOLO inference and return confidence-filtered people."""
+        try:
+            results = self._detector.predict(
+                source=frame,
+                classes=[self._person_class_id],
+                conf=self._detector_confidence,
+                iou=self._detector_iou,
+                imgsz=self._detector_image_size,
+                device=self._detector_device,
+                verbose=False,
+            )
+            detections = self._boxes_from_results(results)
+        except Exception as error:
+            self._inference_failures += 1
+            if self._inference_failures == 1 or \
+                    self._inference_failures % self._fps == 0:
+                self.get_logger().error(
+                    'YOLO inference failed; target output stopped: %s'
+                    % error)
+            return ()
+
+        if self._inference_failures:
+            self.get_logger().info('YOLO inference recovered.')
+        self._inference_failures = 0
+        return detections
+
+    @staticmethod
+    def _boxes_from_results(results) -> Tuple[BoundingBox, ...]:
+        """Convert Ultralytics result tensors to dependency-free boxes."""
+        if not results:
+            return ()
+        boxes = results[0].boxes
+        if boxes is None:
+            return ()
+
+        coordinates = boxes.xyxy.cpu().tolist()
+        confidences = boxes.conf.cpu().tolist()
+        return tuple(
+            BoundingBox(
+                x1=float(values[0]),
+                y1=float(values[1]),
+                x2=float(values[2]),
+                y2=float(values[3]),
+                confidence=float(confidence),
+            )
+            for values, confidence in zip(coordinates, confidences)
+        )
 
     @staticmethod
     def _clamp(value: float, lower: float, upper: float) -> float:
