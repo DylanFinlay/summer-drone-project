@@ -147,6 +147,8 @@ Launch toggles:
 - `enable_object_detection`: loads and runs the YOLO person detector
 - `enable_tracking`: starts autonomous command generation
 - `enable_fc_interface`: starts MAVROS and its command safety adapter
+- `enable_flight_logging`: records selected control and state topics to rosbag
+- `flight_log_directory`: overrides the timestamped rosbag output directory
 - `fcu_url`: selects the MAVROS serial, UDP, TCP, or SITL connection
 - `gcs_url`: optionally forwards MAVLink traffic to a ground station
 - `parameter_file`: selects an alternative complete YAML configuration
@@ -170,6 +172,23 @@ on `/diagnostics` for ROS diagnostic tools. Missing component reports become
 healthy. An intentionally disabled tracking or FC interface is reported as
 `disabled`. `safety_stop_reason` preserves reasons from both the command
 safety supervisor and the final MAVROS gate when both are active.
+
+## Flight-data logging
+
+Logging is opt-in to avoid filling the Pi's storage during ordinary testing.
+Enable it for SITL, bench, or outdoor test runs with:
+
+```bash
+ros2 launch diy_autonomous_drone drone_autonomous.launch.py \
+  enable_flight_logging:=true
+```
+
+Each default bag is timestamped under
+`~/.ros/diy_autonomous_drone/`. It records commands, modes, selected-target
+data, target visibility, safety reasons, diagnostics, and MAVROS state. Camera
+images are deliberately excluded to keep files small. Stop the launch cleanly
+with Ctrl+C so rosbag can finalize its metadata. Inspect or replay a bag with
+`ros2 bag info BAG_DIRECTORY` and `ros2 bag play BAG_DIRECTORY`.
 
 ## Camera
 

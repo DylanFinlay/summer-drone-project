@@ -4,12 +4,17 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+
+from diy_autonomous_drone.flight_logging import (
+    default_flight_log_directory,
+    rosbag_record_arguments,
+)
 
 
 def generate_launch_description():
@@ -60,6 +65,16 @@ def generate_launch_description():
             'enable_fc_interface',
             default_value='true',
             description='Start MAVROS and the command safety adapter.',
+        ),
+        DeclareLaunchArgument(
+            'enable_flight_logging',
+            default_value='false',
+            description='Record bounded flight data to a ROS bag.',
+        ),
+        DeclareLaunchArgument(
+            'flight_log_directory',
+            default_value=default_flight_log_directory(),
+            description='Unique output directory for the optional ROS bag.',
         ),
         DeclareLaunchArgument(
             'fcu_url',
@@ -192,4 +207,12 @@ def generate_launch_description():
         ),
     ]
 
-    return LaunchDescription(launch_arguments + nodes)
+    flight_recorder = ExecuteProcess(
+        cmd=rosbag_record_arguments(
+            LaunchConfiguration('flight_log_directory')),
+        output='screen',
+        condition=IfCondition(
+            LaunchConfiguration('enable_flight_logging')),
+    )
+
+    return LaunchDescription(launch_arguments + nodes + [flight_recorder])

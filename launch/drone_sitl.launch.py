@@ -14,6 +14,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
+from diy_autonomous_drone.flight_logging import default_flight_log_directory
 from diy_autonomous_drone.sitl_support import sim_vehicle_arguments
 
 
@@ -80,6 +81,16 @@ def generate_launch_description():
             description='Run YOLO when simulated vision is enabled.',
         ),
         DeclareLaunchArgument(
+            'enable_flight_logging',
+            default_value='false',
+            description='Record simulated flight data to a ROS bag.',
+        ),
+        DeclareLaunchArgument(
+            'flight_log_directory',
+            default_value=default_flight_log_directory(),
+            description='Unique output directory for the optional ROS bag.',
+        ),
+        DeclareLaunchArgument(
             'gcs_url',
             default_value='',
             description='Optional MAVROS forwarding URL for a GCS.',
@@ -115,6 +126,10 @@ def generate_launch_description():
                 'enable_object_detection'),
             'enable_tracking': 'true',
             'enable_fc_interface': 'true',
+            'enable_flight_logging': LaunchConfiguration(
+                'enable_flight_logging'),
+            'flight_log_directory': LaunchConfiguration(
+                'flight_log_directory'),
             'fcu_url': LaunchConfiguration('fcu_url'),
             'gcs_url': LaunchConfiguration('gcs_url'),
             'target_system_id': '1',

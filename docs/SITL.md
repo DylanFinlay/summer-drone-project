@@ -36,6 +36,10 @@ ros2 launch diy_autonomous_drone drone_sitl.launch.py \
   sim_vehicle_command:=$HOME/ardupilot/Tools/autotest/sim_vehicle.py
 ```
 
+Add `enable_flight_logging:=true` to capture the complete low-bandwidth
+decision and command path for later inspection. Logging is disabled by
+default and excludes camera images.
+
 The first run compiles ArduCopter and can take several minutes. MAVROS may
 restart while TCP port 5760 is unavailable and will connect once SITL begins
 listening. Simulator state and logs are kept under
@@ -80,6 +84,11 @@ ros2 topic hz /drone/cmd_vel_raw
 ros2 topic hz /drone/cmd_vel_safe
 ros2 topic hz /mavros/setpoint_velocity/cmd_vel
 ```
+
+Automated software tests cover raw-command and target watchdogs, proximity
+stops, MAVROS disconnects, incorrect RC flight modes, disarming, command
+freshness, target-loss transitions, invalid timing, and unsafe mode requests.
+Run them in the sourced Ubuntu workspace with `colcon test`.
 
 ## Optional simulated authority check
 

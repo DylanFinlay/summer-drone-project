@@ -7,6 +7,8 @@ from geometry_msgs.msg import Pose2D, Twist
 from rclpy.node import Node
 from std_msgs.msg import String
 
+from diy_autonomous_drone.safety_policy import supervisor_fault_reason
+
 
 class SafetySupervisorNode(Node):
     """Publish only commands that pass timeout and proximity checks."""
@@ -92,20 +94,20 @@ class SafetySupervisorNode(Node):
     def _current_fault_reason(self) -> Optional[str]:
         """Return a human-readable active fault, or ``None`` when safe."""
         now = self.get_clock().now()
-        if self._last_command_time is None:
-            return 'waiting for first velocity command'
-        if self._seconds_since(self._last_command_time, now) > \
-                self._watchdog_timeout:
-            return 'velocity command timeout'
-        if self._command_requests_motion(self._last_command):
-            if self._last_target_time is None:
-                return 'motion requested without a target observation'
-            if self._seconds_since(self._last_target_time, now) > \
-                    self._watchdog_timeout:
-                return 'target tracking timeout'
-            if self._target_too_close:
-                return 'target inside minimum safety distance'
-        return None
+        command_age = None
+        if self._last_command_time is not None:
+            command_age = self._seconds_since(self._last_command_time, now)
+        target_age = None
+        if self._last_target_time is not None:
+            target_age = self._seconds_since(self._last_target_time, now)
+        return supervisor_fault_reason(
+            command_age_sec=command_age,
+            command_requests_motion=self._command_requests_motion(
+                self._last_command),
+            target_age_sec=target_age,
+            target_too_close=self._target_too_close,
+            watchdog_timeout_sec=self._watchdog_timeout,
+        )
 
     @staticmethod
     def _command_requests_motion(command: Optional[Twist]) -> bool:

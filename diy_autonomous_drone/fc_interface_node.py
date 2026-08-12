@@ -9,11 +9,14 @@ from mavros_msgs.msg import State
 from rclpy.node import Node
 from std_msgs.msg import String
 
+from diy_autonomous_drone.safety_policy import (
+    fc_authority_block_reason,
+    fc_command_gate_reason,
+)
+
 
 class FlightControllerInterfaceNode(Node):
     """Publish fresh commands to MAVROS only with explicit FC authority."""
-
-    REQUIRED_FLIGHT_MODE = 'GUIDED'
 
     def __init__(self) -> None:
         """Declare safety parameters and establish MAVROS interfaces."""
@@ -98,30 +101,34 @@ class FlightControllerInterfaceNode(Node):
 
     def _authority_block_reason(self) -> Optional[str]:
         """Return why MAVROS/RC state does not currently grant authority."""
-        if self._latest_state is None or self._last_state_time is None:
-            return 'waiting for MAVROS state'
-        if time.monotonic() - self._last_state_time > self._state_timeout:
-            return 'MAVROS state timeout'
-        if not self._latest_state.connected:
-            return 'MAVROS is disconnected from the flight controller'
-        flight_mode = self._latest_state.mode.strip().upper()
-        if self._require_guided and flight_mode != self.REQUIRED_FLIGHT_MODE:
-            return 'flight mode is %s, not Guided' % (flight_mode or 'UNKNOWN')
-        if self._require_armed and not self._latest_state.armed:
-            return 'vehicle is disarmed'
-        return None
+        state_age = None
+        if self._last_state_time is not None:
+            state_age = time.monotonic() - self._last_state_time
+        state = self._latest_state
+        return fc_authority_block_reason(
+            state_age_sec=state_age,
+            connected=bool(state and state.connected),
+            flight_mode=state.mode if state is not None else '',
+            armed=bool(state and state.armed),
+            state_timeout_sec=self._state_timeout,
+            require_guided_mode=self._require_guided,
+            require_armed=self._require_armed,
+        )
 
     def _gated_command(
         self, authority_reason: Optional[str]
     ) -> Tuple[Twist, Optional[str]]:
         """Return motion only when authority and command freshness pass."""
-        if authority_reason is not None:
-            return Twist(), authority_reason
-        if self._last_command_time is None:
-            return Twist(), 'waiting for a new safety command'
-        if time.monotonic() - self._last_command_time > \
-                self._command_timeout:
-            return Twist(), 'safety command timeout'
+        command_age = None
+        if self._last_command_time is not None:
+            command_age = time.monotonic() - self._last_command_time
+        gate_reason = fc_command_gate_reason(
+            authority_reason=authority_reason,
+            command_age_sec=command_age,
+            command_timeout_sec=self._command_timeout,
+        )
+        if gate_reason is not None:
+            return Twist(), gate_reason
         return self._latest_command, None
 
     def _log_gate_transition(self, reason: Optional[str]) -> None:
