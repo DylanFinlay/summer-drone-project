@@ -59,3 +59,9 @@ fc_interface_node:
     state_timeout_sec: 2.0
     require_guided_mode: true
     require_armed: true
+
+status_node:
+  ros__parameters:
+    publish_rate_hz: 2.0
+    # Component heartbeat age after which status becomes stale/unknown.
+    input_timeout_sec: 2.0

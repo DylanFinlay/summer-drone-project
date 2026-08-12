@@ -128,6 +128,25 @@ def generate_launch_description():
             parameters=[parameter_file],
         ),
         Node(
+            package=package_name,
+            executable='status_node',
+            name='status_node',
+            output='screen',
+            parameters=[
+                parameter_file,
+                {
+                    'expect_fc_interface': ParameterValue(
+                        LaunchConfiguration('enable_fc_interface'),
+                        value_type=bool,
+                    ),
+                    'expect_tracking': ParameterValue(
+                        LaunchConfiguration('enable_tracking'),
+                        value_type=bool,
+                    ),
+                },
+            ],
+        ),
+        Node(
             package='mavros',
             executable='mavros_node',
             namespace='mavros',

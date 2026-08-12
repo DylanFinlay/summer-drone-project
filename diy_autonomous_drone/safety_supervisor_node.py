@@ -5,6 +5,7 @@ from typing import Optional
 import rclpy
 from geometry_msgs.msg import Pose2D, Twist
 from rclpy.node import Node
+from std_msgs.msg import String
 
 
 class SafetySupervisorNode(Node):
@@ -32,6 +33,8 @@ class SafetySupervisorNode(Node):
 
         self._safe_command_publisher = self.create_publisher(
             Twist, '/drone/cmd_vel_safe', 10)
+        self._fault_reason_publisher = self.create_publisher(
+            String, '/drone/safety_stop_reason', 10)
         self._command_subscription = self.create_subscription(
             Twist, '/drone/cmd_vel_raw', self._command_callback, 10)
         self._tracking_subscription = self.create_subscription(
@@ -82,6 +85,9 @@ class SafetySupervisorNode(Node):
             self._fault_reason = fault_reason
 
         self._safe_command_publisher.publish(output)
+        reason_message = String()
+        reason_message.data = fault_reason or ''
+        self._fault_reason_publisher.publish(reason_message)
 
     def _current_fault_reason(self) -> Optional[str]:
         """Return a human-readable active fault, or ``None`` when safe."""

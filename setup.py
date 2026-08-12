@@ -41,6 +41,7 @@ setup(
             'diy_autonomous_drone.safety_supervisor_node:main',
             'fc_interface_node = '
             'diy_autonomous_drone.fc_interface_node:main',
+            'status_node = diy_autonomous_drone.status_node:main',
             'sitl_smoke_test = '
             'diy_autonomous_drone.sitl_smoke_test:main',
         ],

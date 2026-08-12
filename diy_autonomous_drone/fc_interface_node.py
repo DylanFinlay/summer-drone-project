@@ -7,6 +7,7 @@ import rclpy
 from geometry_msgs.msg import Twist, TwistStamped
 from mavros_msgs.msg import State
 from rclpy.node import Node
+from std_msgs.msg import String
 
 
 class FlightControllerInterfaceNode(Node):
@@ -48,6 +49,8 @@ class FlightControllerInterfaceNode(Node):
 
         self._velocity_publisher = self.create_publisher(
             TwistStamped, '/mavros/setpoint_velocity/cmd_vel', 10)
+        self._gate_reason_publisher = self.create_publisher(
+            String, '/drone/fc_gate_reason', 10)
         self._command_subscription = self.create_subscription(
             Twist, '/drone/cmd_vel_safe', self._command_callback, 10)
         self._state_subscription = self.create_subscription(
@@ -85,6 +88,7 @@ class FlightControllerInterfaceNode(Node):
 
         command, gate_reason = self._gated_command(authority_reason)
         self._log_gate_transition(gate_reason)
+        self._publish_gate_reason(gate_reason)
 
         output = TwistStamped()
         output.header.stamp = self.get_clock().now().to_msg()
@@ -132,6 +136,12 @@ class FlightControllerInterfaceNode(Node):
             self.get_logger().warning(
                 'MAVROS command gate closed: %s.' % reason)
         self._gate_reason = reason
+
+    def _publish_gate_reason(self, reason: Optional[str]) -> None:
+        """Publish the final command gate's current stop reason."""
+        message = String()
+        message.data = reason or ''
+        self._gate_reason_publisher.publish(message)
 
 
 def main(args=None) -> None:

@@ -153,6 +153,24 @@ Launch toggles:
 
 The safety supervisor is deliberately not optional in the launch file.
 
+## Live status and diagnostics
+
+The passive status node starts in every launch configuration and combines the
+active autonomy mode, MAVROS flight-controller state, target-lock state, and
+the independent safety-gate reasons. It never publishes flight commands or
+changes authority. Inspect its compact JSON summary with:
+
+```bash
+ros2 topic echo /drone/status
+```
+
+The same fields are published as a standard `diagnostic_msgs/DiagnosticArray`
+on `/diagnostics` for ROS diagnostic tools. Missing component reports become
+`stale` and their values become `unknown`; they are never silently treated as
+healthy. An intentionally disabled tracking or FC interface is reported as
+`disabled`. `safety_stop_reason` preserves reasons from both the command
+safety supervisor and the final MAVROS gate when both are active.
+
 ## Camera
 
 `camera_backend: auto` tries Picamera2 first and then OpenCV. Picamera2 is the

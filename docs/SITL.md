@@ -72,6 +72,8 @@ Useful inspection commands:
 
 ```bash
 ros2 topic echo --once /mavros/state
+ros2 topic echo /drone/status
+ros2 topic echo /diagnostics
 ros2 topic echo /drone/tracking_state
 ros2 topic echo /drone/target_visible
 ros2 topic hz /drone/cmd_vel_raw

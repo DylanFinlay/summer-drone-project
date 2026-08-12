@@ -126,6 +126,8 @@ class TrackingBridgeNode(Node):
             Twist, '/drone/cmd_vel_raw', 10)
         self._tracking_state_publisher = self.create_publisher(
             String, '/drone/tracking_state', 10)
+        self._autonomy_mode_publisher = self.create_publisher(
+            String, '/drone/autonomy_mode', 10)
         self._tracking_subscription = self.create_subscription(
             Pose2D,
             '/drone/target_tracking_box',
@@ -150,6 +152,7 @@ class TrackingBridgeNode(Node):
         self.get_logger().info(
             'Tracking bridge started in %s mode.' % self._mode)
         self._publish_tracking_state()
+        self._publish_autonomy_mode()
 
     def _startup_mode(self, requested: str, gesture_enabled: bool) -> str:
         """Fail closed to hover for an unsafe launch-time mode request."""
@@ -216,6 +219,7 @@ class TrackingBridgeNode(Node):
                 'waiting for fresh input.'
                 % (previous_mode, self._mode)
             )
+        self._publish_autonomy_mode()
 
     def _stop_and_clear_inputs(self) -> None:
         """Stop immediately and invalidate data from the previous mode."""
@@ -259,6 +263,10 @@ class TrackingBridgeNode(Node):
 
     def _publish_command(self) -> None:
         """Publish a limited command or bypass the limiter for a safe stop."""
+        # These component heartbeats must continue even when a mode has no
+        # fresh perception input and therefore returns early with a stop.
+        self._publish_autonomy_mode()
+        self._publish_tracking_state()
         if self._mode == self.MODE_ACTIVE_TRACK:
             now = time.monotonic()
             tracking_state = self._target_loss_state.state
@@ -354,6 +362,13 @@ class TrackingBridgeNode(Node):
         message = String()
         message.data = self._target_loss_state.state.value
         self._tracking_state_publisher.publish(message)
+        self._publish_autonomy_mode()
+
+    def _publish_autonomy_mode(self) -> None:
+        """Publish the currently active command-generator mode."""
+        message = String()
+        message.data = self._mode
+        self._autonomy_mode_publisher.publish(message)
 
     def _limited_command(self, desired: Twist) -> Twist:
         """Convert a desired command through the time-based limiter."""
