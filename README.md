@@ -22,6 +22,26 @@ uses a subset of its plugins. The default connection is
 `serial:///dev/ttyAMA0:57600`; it can be replaced at launch with `fcu_url:=...`
 for a USB serial device, UDP, or ArduPilot SITL.
 
+## Software-in-the-loop simulation
+
+The SITL launch starts an ArduCopter quad, MAVROS over loopback TCP, and the
+complete project stack in safe `hover` mode:
+
+```bash
+ros2 launch diy_autonomous_drone drone_sitl.launch.py \
+  sim_vehicle_command:=$HOME/ardupilot/Tools/autotest/sim_vehicle.py
+```
+
+From another sourced terminal, verify the connected zero-command pipeline:
+
+```bash
+ros2 run diy_autonomous_drone sitl_smoke_test
+```
+
+See the [SITL setup and test guide](docs/SITL.md) for the one-time ArduPilot
+installation, launch options, expected checks, and optional simulated
+Guided/armed authority test.
+
 ## Vision setup
 
 The active-tracking MVP uses an Ultralytics YOLO11 nano detector. Create the
