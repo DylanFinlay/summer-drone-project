@@ -6,6 +6,7 @@ from typing import Optional
 
 import rclpy
 from geometry_msgs.msg import Pose2D, Twist
+from mavros_msgs.msg import RCIn
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.parameter import Parameter
@@ -18,6 +19,7 @@ from diy_autonomous_drone.autonomy_modes import (
     mode_rejection_reason,
     normalized_mode,
 )
+from diy_autonomous_drone.rc_aux_selector import RcAuxModeSelector
 from diy_autonomous_drone.shutdown_safety import publish_zero_burst
 from diy_autonomous_drone.tracking_filter import (
     TargetObservationFilter,
@@ -65,14 +67,30 @@ class TrackingBridgeNode(Node):
         self.declare_parameter('target_loss_grace_sec', 0.75)
         self.declare_parameter('gesture_timeout_sec', 0.3)
         self.declare_parameter('command_rate_hz', 20)
+        self.declare_parameter('enable_rc_aux_mode_selection', False)
+        self.declare_parameter('rc_aux_channel', 0)
+        self.declare_parameter('rc_aux_low_max_pwm', 1300)
+        self.declare_parameter('rc_aux_high_min_pwm', 1700)
+        self.declare_parameter('rc_aux_confirm_samples', 3)
+        self.declare_parameter('rc_aux_timeout_sec', 0.5)
+        self.declare_parameter('rc_aux_low_mode', self.MODE_HOVER)
+        self.declare_parameter('rc_aux_middle_mode', self.MODE_HOVER)
+        self.declare_parameter('rc_aux_high_mode', self.MODE_ACTIVE_TRACK)
 
         requested_mode = normalized_mode(
             self.get_parameter('autonomy_mode').value)
         self._gesture_enabled = bool(
             self.get_parameter('enable_gesture_control').value)
+        self._rc_aux_enabled = bool(
+            self.get_parameter('enable_rc_aux_mode_selection').value)
+        if self._rc_aux_enabled and requested_mode != self.MODE_HOVER:
+            self.get_logger().warning(
+                'RC auxiliary mode selection starts in hover and waits for '
+                'a confirmed fresh switch position.')
+            requested_mode = self.MODE_HOVER
         self._mode = self._startup_mode(
             requested_mode, self._gesture_enabled)
-        if self._mode != requested_mode:
+        if self.get_parameter('autonomy_mode').value != self._mode:
             self.set_parameters([
                 Parameter('autonomy_mode', value=self._mode),
             ])
@@ -118,6 +136,27 @@ class TrackingBridgeNode(Node):
         command_rate = max(
             1, int(self.get_parameter('command_rate_hz').value))
 
+        self._rc_aux_selector = None
+        if self._rc_aux_enabled:
+            self._rc_aux_selector = RcAuxModeSelector(
+                channel=int(self.get_parameter('rc_aux_channel').value),
+                low_max_pwm=int(
+                    self.get_parameter('rc_aux_low_max_pwm').value),
+                high_min_pwm=int(
+                    self.get_parameter('rc_aux_high_min_pwm').value),
+                confirm_samples=int(
+                    self.get_parameter('rc_aux_confirm_samples').value),
+                timeout_sec=float(
+                    self.get_parameter('rc_aux_timeout_sec').value),
+                low_mode=normalized_mode(
+                    self.get_parameter('rc_aux_low_mode').value),
+                middle_mode=normalized_mode(
+                    self.get_parameter('rc_aux_middle_mode').value),
+                high_mode=normalized_mode(
+                    self.get_parameter('rc_aux_high_mode').value),
+            )
+        self._rc_aux_rejection_reason = None
+
         self._latest_target: Optional[Pose2D] = None
         self._latest_target_time = None
         self._latest_gesture = self.GESTURE_NONE
@@ -129,6 +168,8 @@ class TrackingBridgeNode(Node):
             String, '/drone/tracking_state', 10)
         self._autonomy_mode_publisher = self.create_publisher(
             String, '/drone/autonomy_mode', 10)
+        self._rc_aux_state_publisher = self.create_publisher(
+            String, '/drone/rc_aux_state', 10)
         self._tracking_subscription = self.create_subscription(
             Pose2D,
             '/drone/target_tracking_box',
@@ -143,6 +184,10 @@ class TrackingBridgeNode(Node):
         )
         self._gesture_subscription = self.create_subscription(
             Int32, '/drone/active_gesture', self._gesture_callback, 10)
+        self._rc_input_subscription = None
+        if self._rc_aux_enabled:
+            self._rc_input_subscription = self.create_subscription(
+                RCIn, '/mavros/rc/in', self._rc_input_callback, 10)
         self._command_timer = self.create_timer(
             1.0 / float(command_rate), self._publish_command)
         self.add_on_set_parameters_callback(
@@ -154,6 +199,7 @@ class TrackingBridgeNode(Node):
             'Tracking bridge started in %s mode.' % self._mode)
         self._publish_tracking_state()
         self._publish_autonomy_mode()
+        self._publish_rc_aux_state(time.monotonic())
 
     def _startup_mode(self, requested: str, gesture_enabled: bool) -> str:
         """Fail closed to hover for an unsafe launch-time mode request."""
@@ -263,8 +309,59 @@ class TrackingBridgeNode(Node):
         self._latest_gesture = int(message.data)
         self._latest_gesture_time = self.get_clock().now()
 
+    def _rc_input_callback(self, message: RCIn) -> None:
+        """Apply a fresh, debounced spare-channel autonomy request."""
+        now = time.monotonic()
+        requested_mode = self._rc_aux_selector.update(
+            message.channels, now)
+        self._apply_rc_aux_mode(requested_mode)
+        self._publish_rc_aux_state(now)
+
+    def _apply_rc_aux_mode(self, requested_mode: Optional[str]) -> None:
+        """Apply an RC-requested ROS mode without changing FC authority."""
+        if requested_mode is None:
+            return
+        rejection_reason = mode_rejection_reason(
+            requested_mode, self._gesture_enabled)
+        effective_mode = (
+            self.MODE_HOVER if rejection_reason else requested_mode)
+        if rejection_reason != self._rc_aux_rejection_reason:
+            if rejection_reason:
+                self.get_logger().error(
+                    'RC auxiliary request rejected; holding hover: %s'
+                    % rejection_reason)
+            elif self._rc_aux_rejection_reason:
+                self.get_logger().info(
+                    'RC auxiliary mode request is valid again.')
+            self._rc_aux_rejection_reason = rejection_reason
+        if effective_mode == self._mode:
+            return
+        result = self.set_parameters([
+            Parameter('autonomy_mode', value=effective_mode),
+        ])[0]
+        if not result.successful:
+            self.get_logger().error(
+                'Unable to apply RC auxiliary mode; holding current mode: %s'
+                % (result.reason or 'no reason'))
+
+    def _publish_rc_aux_state(self, timestamp: float) -> None:
+        """Publish a fresh operator-visible auxiliary switch state."""
+        message = String()
+        if self._rc_aux_selector is None:
+            message.data = 'disabled'
+        else:
+            message.data = self._rc_aux_selector.status(timestamp)
+            if self._rc_aux_rejection_reason:
+                message.data += ':rejected'
+        self._rc_aux_state_publisher.publish(message)
+
     def _publish_command(self) -> None:
         """Publish a limited command or bypass the limiter for a safe stop."""
+        monotonic_now = time.monotonic()
+        if self._rc_aux_selector is not None:
+            self._apply_rc_aux_mode(
+                self._rc_aux_selector.requested_mode(monotonic_now))
+            self._publish_rc_aux_state(monotonic_now)
         # These component heartbeats must continue even when a mode has no
         # fresh perception input and therefore returns early with a stop.
         self._publish_autonomy_mode()

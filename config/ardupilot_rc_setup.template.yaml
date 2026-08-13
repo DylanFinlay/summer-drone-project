@@ -22,6 +22,10 @@ authority_design:
     - GUIDED
   rtl_aux_channel: null
   rtl_aux_switch_verified: false
+  # Optional ROS-only mode selector. This must be a different spare channel,
+  # and its ArduPilot RCx_OPTION must remain 0 (Do Nothing).
+  ros_mode_aux_channel: null
+  ros_mode_aux_ardupilot_option: null
 
 # Record the values produced by ArduPilot radio calibration. Never copy these
 # values from another transmitter/receiver pair.
@@ -32,6 +36,14 @@ calibrated_channels:
   channel_4: {function: yaw, min: null, trim: null, max: null, reversed: null}
   flight_mode_channel: {channel: null, switch_pwm_values: []}
   rtl_aux: {channel: null, low_pwm: null, high_pwm: null}
+  ros_mode_aux:
+    channel: null
+    low_pwm: null
+    middle_pwm: null
+    high_pwm: null
+    low_mode: hover
+    middle_mode: hover
+    high_mode: active_track
 
 verification:
   radio_calibration_completed_props_removed: false
@@ -41,4 +53,8 @@ verification:
   mavros_reports_loiter: false
   mavros_reports_guided: false
   rtl_behavior_proven_in_manual_flight: false
+  ros_mode_aux_is_unique_spare_channel: false
+  ros_mode_aux_ardupilot_option_is_zero: false
+  ros_mode_aux_matches_mavros_rc_in: false
+  ros_mode_aux_stale_input_hovers: false
   known_good_parameter_export_path: null

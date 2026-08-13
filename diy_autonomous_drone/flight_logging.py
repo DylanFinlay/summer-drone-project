@@ -10,6 +10,7 @@ FLIGHT_LOG_TOPICS = (
     '/drone/cmd_vel_raw',
     '/drone/cmd_vel_safe',
     '/drone/fc_gate_reason',
+    '/drone/rc_aux_state',
     '/drone/safety_stop_reason',
     '/drone/status',
     '/drone/target_tracking_box',

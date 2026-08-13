@@ -9,6 +9,7 @@ try:
     from rclpy.parameter import Parameter
     from std_msgs.msg import Bool
 
+    from diy_autonomous_drone.rc_aux_selector import RcAuxModeSelector
     from diy_autonomous_drone.target_loss_state import TargetTrackingState
     from diy_autonomous_drone.tracking_bridge_node import TrackingBridgeNode
     ROS_AVAILABLE = True
@@ -140,6 +141,33 @@ class TestTrackingBridgeModeChanges(unittest.TestCase):
                 node._target_loss_state.state,
                 TargetTrackingState.TRACKING,
             )
+        finally:
+            node.destroy_node()
+            if owns_context:
+                rclpy.shutdown()
+
+    def test_rc_aux_requests_ros_modes_but_respects_gesture_lock(self):
+        """A spare RC channel selects modes without bypassing feature gates."""
+        owns_context = not rclpy.ok()
+        if owns_context:
+            rclpy.init()
+
+        node = TrackingBridgeNode()
+        publisher = CapturingPublisher()
+        node._command_publisher = publisher
+        node._rc_aux_selector = RcAuxModeSelector(
+            6, 1300, 1700, 1, 0.5,
+            high_mode='active_track',
+        )
+        try:
+            requested = node._rc_aux_selector.update(
+                [1500, 1500, 1000, 1500, 1000, 1900], 1.0)
+            node._apply_rc_aux_mode(requested)
+            self.assertEqual(node._mode, node.MODE_ACTIVE_TRACK)
+
+            node._apply_rc_aux_mode('gesture_control')
+            self.assertEqual(node._mode, node.MODE_HOVER)
+            self.assertIsNotNone(node._rc_aux_rejection_reason)
         finally:
             node.destroy_node()
             if owns_context:

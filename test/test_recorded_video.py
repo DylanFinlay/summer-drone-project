@@ -22,6 +22,8 @@ class TestRecordedVideoConfiguration(unittest.TestCase):
         self.assertEqual(arguments['autonomy_mode'], 'active_track')
         self.assertEqual(arguments['enable_vision'], 'true')
         self.assertEqual(arguments['enable_tracking'], 'true')
+        self.assertEqual(
+            arguments['enable_rc_aux_mode_selection'], 'false')
         self.assertEqual(arguments['enable_fc_interface'], 'false')
         self.assertEqual(arguments['video_file'], '/tmp/walk.mp4')
 
@@ -29,6 +31,24 @@ class TestRecordedVideoConfiguration(unittest.TestCase):
         """The helper cannot construct an unspecified video source."""
         with self.assertRaises(ValueError):
             recorded_video_stack_arguments(None, False, True, False)
+
+    def test_gesture_video_remains_disconnected_from_fc(self):
+        """Gesture playback can exercise commands without an FC pathway."""
+        arguments = recorded_video_stack_arguments(
+            video_file='/tmp/gestures.mp4',
+            loop_video='false',
+            enable_object_detection='true',
+            enable_flight_logging='true',
+            autonomy_mode='gesture_control',
+            enable_gesture_control='true',
+            enable_gesture_recognition='true',
+        )
+        self.assertEqual(arguments['autonomy_mode'], 'gesture_control')
+        self.assertEqual(arguments['enable_gesture_control'], 'true')
+        self.assertEqual(arguments['enable_gesture_recognition'], 'true')
+        self.assertEqual(
+            arguments['enable_rc_aux_mode_selection'], 'false')
+        self.assertEqual(arguments['enable_fc_interface'], 'false')
 
 
 if __name__ == '__main__':

@@ -35,6 +35,21 @@ def generate_launch_description():
             description='Run the configured YOLO detector on video frames.',
         ),
         DeclareLaunchArgument(
+            'autonomy_mode',
+            default_value='active_track',
+            description='Use active_track or gesture_control for playback.',
+        ),
+        DeclareLaunchArgument(
+            'enable_gesture_control',
+            default_value='false',
+            description='Unlock experimental gesture command generation.',
+        ),
+        DeclareLaunchArgument(
+            'enable_gesture_recognition',
+            default_value='false',
+            description='Run YOLO pose gesture recognition on the video.',
+        ),
+        DeclareLaunchArgument(
             'enable_flight_logging',
             default_value='false',
             description='Record perception and command decisions to rosbag.',
@@ -50,6 +65,11 @@ def generate_launch_description():
                 'enable_object_detection'),
             enable_flight_logging=LaunchConfiguration(
                 'enable_flight_logging'),
+            autonomy_mode=LaunchConfiguration('autonomy_mode'),
+            enable_gesture_control=LaunchConfiguration(
+                'enable_gesture_control'),
+            enable_gesture_recognition=LaunchConfiguration(
+                'enable_gesture_recognition'),
         ).items(),
     )
 

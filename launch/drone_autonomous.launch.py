@@ -64,6 +64,11 @@ def generate_launch_description():
             description='Allow the experimental gesture-control mode.',
         ),
         DeclareLaunchArgument(
+            'enable_gesture_recognition',
+            default_value='false',
+            description='Run experimental YOLO pose gesture recognition.',
+        ),
+        DeclareLaunchArgument(
             'enable_vision',
             default_value='false',
             description='Start the camera/perception node.',
@@ -87,6 +92,16 @@ def generate_launch_description():
             'enable_tracking',
             default_value='true',
             description='Start the autonomous command generator.',
+        ),
+        DeclareLaunchArgument(
+            'enable_rc_aux_mode_selection',
+            default_value='false',
+            description='Use a calibrated spare RC channel for ROS modes.',
+        ),
+        DeclareLaunchArgument(
+            'rc_aux_channel',
+            default_value='0',
+            description='One-based spare RC channel; zero is unconfigured.',
         ),
         DeclareLaunchArgument(
             'enable_fc_interface',
@@ -139,6 +154,10 @@ def generate_launch_description():
                         LaunchConfiguration('enable_object_detection'),
                         value_type=bool,
                     ),
+                    'enable_gesture_recognition': ParameterValue(
+                        LaunchConfiguration('enable_gesture_recognition'),
+                        value_type=bool,
+                    ),
                     'video_file': ParameterValue(
                         LaunchConfiguration('video_file'),
                         value_type=str,
@@ -168,6 +187,15 @@ def generate_launch_description():
                         LaunchConfiguration('enable_gesture_control'),
                         value_type=bool,
                     ),
+                    'enable_rc_aux_mode_selection': ParameterValue(
+                        LaunchConfiguration(
+                            'enable_rc_aux_mode_selection'),
+                        value_type=bool,
+                    ),
+                    'rc_aux_channel': ParameterValue(
+                        LaunchConfiguration('rc_aux_channel'),
+                        value_type=int,
+                    ),
                 },
             ],
             condition=IfCondition(LaunchConfiguration('enable_tracking')),
@@ -194,6 +222,11 @@ def generate_launch_description():
                     ),
                     'expect_tracking': ParameterValue(
                         LaunchConfiguration('enable_tracking'),
+                        value_type=bool,
+                    ),
+                    'expect_rc_aux': ParameterValue(
+                        LaunchConfiguration(
+                            'enable_rc_aux_mode_selection'),
                         value_type=bool,
                     ),
                 },

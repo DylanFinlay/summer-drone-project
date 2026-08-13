@@ -20,6 +20,12 @@ vision_node:
     lock_iou_threshold: 0.15
     ambiguity_iou_margin: 0.05
     max_missed_frames: 5
+    # Experimental and opt-in. Reuses one YOLO pose model for both person
+    # boxes and body keypoints instead of loading a second vision framework.
+    enable_gesture_recognition: false
+    gesture_pose_model: yolo11n-pose.pt
+    gesture_min_keypoint_confidence: 0.55
+    gesture_confirm_frames: 4
 
 tracking_bridge_node:
   ros__parameters:
@@ -48,6 +54,17 @@ tracking_bridge_node:
     target_loss_grace_sec: 0.75
     gesture_timeout_sec: 0.3
     command_rate_hz: 20
+    # Disabled until a spare receiver channel is calibrated on the aircraft.
+    # Low/middle hold hover; only a confirmed high requests active tracking.
+    enable_rc_aux_mode_selection: false
+    rc_aux_channel: 0
+    rc_aux_low_max_pwm: 1300
+    rc_aux_high_min_pwm: 1700
+    rc_aux_confirm_samples: 3
+    rc_aux_timeout_sec: 0.5
+    rc_aux_low_mode: hover
+    rc_aux_middle_mode: hover
+    rc_aux_high_mode: active_track
 
 safety_supervisor_node:
   ros__parameters:

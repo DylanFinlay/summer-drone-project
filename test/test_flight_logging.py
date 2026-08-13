@@ -42,6 +42,7 @@ class TestFlightLogging(unittest.TestCase):
             '/drone/cmd_vel_safe',
             '/drone/safety_stop_reason',
             '/drone/fc_gate_reason',
+            '/drone/rc_aux_state',
             '/drone/tracking_state',
             '/mavros/state',
         }

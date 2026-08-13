@@ -46,6 +46,15 @@ class TestConfigurationProfiles(unittest.TestCase):
         self.assertIn('max_linear_speed: 0.10', bench)
         self.assertIn('max_linear_speed: 0.25', outdoor)
 
+    def test_experimental_inputs_are_disabled_in_base_configuration(self):
+        """Gesture inference and uncalibrated RC selection start locked."""
+        base = (
+            Path(__file__).resolve().parents[1] / 'config' / 'params.yaml'
+        ).read_text()
+        self.assertIn('enable_gesture_recognition: false', base)
+        self.assertIn('enable_rc_aux_mode_selection: false', base)
+        self.assertIn('rc_aux_channel: 0', base)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -106,10 +106,30 @@ ros2 launch diy_autonomous_drone drone_autonomous.launch.py \
   enable_fc_interface:=false
 ```
 
-Gesture control is intentionally disabled by default. To test it later, launch
-with `autonomy_mode:=gesture_control enable_gesture_control:=true`, and keep
-the same physical RC Guided-mode gate. A camera gesture never grants flight
-authority.
+Gesture control is intentionally disabled by default. To test it later, set
+`autonomy_mode:=gesture_control`, `enable_gesture_control:=true`, and
+`enable_gesture_recognition:=true`, and keep the same physical RC Guided-mode
+gate. A camera gesture never grants flight authority.
+
+Gesture recognition uses `yolo11n-pose.pt`, reusing the installed Ultralytics
+runtime instead of adding a second inference framework. The model may download
+on first use, so cache it before field testing. Four matching frames are
+required before motion; an unclear pose stops immediately. The supported poses
+are both arms up, both arms deliberately down-and-out, or one horizontal arm
+pointing toward the image's left/right while the other arm rests. Down is not
+triggered by an ordinary arms-at-sides stance.
+
+Exercise the complete gesture pipeline against a recording before live camera
+or FC testing:
+
+```bash
+ros2 launch diy_autonomous_drone drone_video.launch.py \
+  video_file:=/absolute/path/to/gestures.mp4 \
+  autonomy_mode:=gesture_control enable_gesture_control:=true \
+  enable_gesture_recognition:=true
+```
+
+The recorded-video launch always disables MAVROS and the FC interface.
 
 The motion mode can also be changed while the stack is running. Every accepted
 transition immediately publishes zero, clears observations from the previous
@@ -175,11 +195,14 @@ Launch toggles:
 
 - `autonomy_mode`: `hover`, `active_track`, or `gesture_control`
 - `enable_gesture_control`: unlocks the experimental gesture mode
+- `enable_gesture_recognition`: runs the optional YOLO pose classifier
 - `enable_vision`: starts camera capture and inference hooks
 - `enable_object_detection`: loads and runs the YOLO person detector
 - `video_file`: replaces the live camera with a local recorded video
 - `loop_video`: safely restarts video with cleared target identity
 - `enable_tracking`: starts autonomous command generation
+- `enable_rc_aux_mode_selection`: uses a calibrated spare RC channel for modes
+- `rc_aux_channel`: one-based spare channel; zero means unconfigured
 - `enable_fc_interface`: starts MAVROS and its command safety adapter
 - `enable_flight_logging`: records selected control and state topics to rosbag
 - `flight_log_directory`: overrides the timestamped rosbag output directory
@@ -189,6 +212,31 @@ Launch toggles:
 - `parameter_file`: selects the base YAML before the profile overlay
 
 The safety supervisor is deliberately not optional in the launch file.
+
+## Optional RC auxiliary ROS-mode selection
+
+The receiver-to-flight-controller connection remains the manual safety path.
+After hardware calibration, a separate unused receiver channel can optionally
+select only the ROS command generator. It does not arm, select `GUIDED`, send
+RC overrides, or replace the main ArduPilot flight-mode switch.
+
+With propellers removed, record the spare channel and PWM values in the RC
+worksheet, leave its ArduPilot `RCx_OPTION` as `0` (Do Nothing), and verify the
+values on `/mavros/rc/in`. Then enable the software mapping, for example:
+
+```bash
+ros2 launch diy_autonomous_drone drone_autonomous.launch.py \
+  enable_rc_aux_mode_selection:=true rc_aux_channel:=6 \
+  enable_vision:=true
+```
+
+The conservative mapping is low=`hover`, middle=`hover`, and
+high=`active_track`. Each position requires three matching samples. Missing,
+malformed, transitioning, or stale RC input requests hover immediately. The
+current state is reported on `/drone/rc_aux_state` and in `/drone/status`.
+While this feature is enabled, RC auxiliary input continuously owns the ROS
+mode selection, so operator-tool mode changes are temporary. Keep gesture mode
+out of the RC mapping until recorded-video and props-off tests pass.
 
 ## Configuration profiles
 

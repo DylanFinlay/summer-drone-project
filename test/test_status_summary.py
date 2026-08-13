@@ -106,6 +106,22 @@ class TestDroneStatusModel(unittest.TestCase):
         with self.assertRaises(ValueError):
             DroneStatusModel(input_timeout_sec=0.0)
 
+    def test_enabled_rc_aux_requires_fresh_state(self):
+        """An expected spare-channel selector is visible and fail-closed."""
+        model = DroneStatusModel(
+            input_timeout_sec=1.0,
+            expect_fc_interface=False,
+            expect_tracking=False,
+            expect_rc_aux=True,
+        )
+        model.set_supervisor_reason('', 10.0)
+        self.assertEqual(model.snapshot(10.0).rc_aux_state, 'unknown')
+
+        model.set_rc_aux_state('stale:hover', 10.0)
+        summary = model.snapshot(10.5)
+        self.assertEqual(summary.rc_aux_state, 'stale:hover')
+        self.assertIn('RC auxiliary input stale', summary.safety_stop_reason)
+
     def test_nonfinite_timestamps_are_rejected(self):
         """Invalid time values cannot make status inputs permanently fresh."""
         with self.assertRaises(ValueError):

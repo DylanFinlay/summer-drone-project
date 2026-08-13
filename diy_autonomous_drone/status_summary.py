@@ -24,6 +24,7 @@ class StatusSummary:
     fc_mode: str
     tracking_state: str
     target_locked: bool
+    rc_aux_state: str
     safety_stop_reason: str
 
     def as_dict(self) -> Dict[str, object]:
@@ -36,6 +37,7 @@ class StatusSummary:
             'fc_mode': self.fc_mode,
             'tracking_state': self.tracking_state,
             'target_locked': self.target_locked,
+            'rc_aux_state': self.rc_aux_state,
             'safety_stop_reason': self.safety_stop_reason,
         }
 
@@ -48,6 +50,7 @@ class DroneStatusModel:
         input_timeout_sec: float,
         expect_fc_interface: bool = True,
         expect_tracking: bool = True,
+        expect_rc_aux: bool = False,
     ) -> None:
         """Configure freshness requirements for enabled stack components."""
         timeout = float(input_timeout_sec)
@@ -57,6 +60,7 @@ class DroneStatusModel:
         self._input_timeout = timeout
         self._expect_fc = bool(expect_fc_interface)
         self._expect_tracking = bool(expect_tracking)
+        self._expect_rc_aux = bool(expect_rc_aux)
 
         self._autonomy_mode = 'unknown'
         self._autonomy_mode_time: Optional[float] = None
@@ -70,6 +74,8 @@ class DroneStatusModel:
         self._supervisor_reason_time: Optional[float] = None
         self._fc_gate_reason = ''
         self._fc_gate_reason_time: Optional[float] = None
+        self._rc_aux_state = 'disabled'
+        self._rc_aux_state_time: Optional[float] = None
 
     def set_autonomy_mode(self, value: str, timestamp: float) -> None:
         """Record the command generator's active mode."""
@@ -104,6 +110,11 @@ class DroneStatusModel:
         self._fc_gate_reason = str(value)
         self._fc_gate_reason_time = self._timestamp(timestamp)
 
+    def set_rc_aux_state(self, value: str, timestamp: float) -> None:
+        """Record the optional spare-channel mode-selector state."""
+        self._rc_aux_state = str(value) or 'unknown'
+        self._rc_aux_state_time = self._timestamp(timestamp)
+
     def snapshot(self, timestamp: float) -> StatusSummary:
         """Build a conservative summary from only fresh component inputs."""
         now = self._timestamp(timestamp)
@@ -125,6 +136,19 @@ class DroneStatusModel:
             autonomy_mode = 'disabled'
             tracking_state = 'disabled'
             stop_reasons.append('tracking command generator disabled')
+
+        rc_aux_state = 'disabled'
+        if self._expect_rc_aux:
+            rc_aux_fresh = self._is_fresh(self._rc_aux_state_time, now)
+            if rc_aux_fresh:
+                rc_aux_state = self._rc_aux_state
+                if rc_aux_state.startswith('stale:'):
+                    stop_reasons.append('RC auxiliary input stale')
+                if rc_aux_state.endswith(':rejected'):
+                    stop_reasons.append('RC auxiliary mode request rejected')
+            else:
+                rc_aux_state = 'unknown'
+                unavailable.append('RC auxiliary state')
 
         fc_connected = False
         fc_armed = False
@@ -196,6 +220,7 @@ class DroneStatusModel:
             fc_mode=fc_mode,
             tracking_state=tracking_state,
             target_locked=target_locked,
+            rc_aux_state=rc_aux_state,
             safety_stop_reason=safety_stop_reason,
         )
 

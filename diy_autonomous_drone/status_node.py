@@ -24,6 +24,7 @@ class StatusNode(Node):
         self.declare_parameter('input_timeout_sec', 2.0)
         self.declare_parameter('expect_fc_interface', True)
         self.declare_parameter('expect_tracking', True)
+        self.declare_parameter('expect_rc_aux', False)
 
         publish_rate = float(self.get_parameter('publish_rate_hz').value)
         if not math.isfinite(publish_rate) or publish_rate <= 0.0:
@@ -35,6 +36,8 @@ class StatusNode(Node):
                 self.get_parameter('expect_fc_interface').value),
             expect_tracking=bool(
                 self.get_parameter('expect_tracking').value),
+            expect_rc_aux=bool(
+                self.get_parameter('expect_rc_aux').value),
         )
 
         self._status_publisher = self.create_publisher(
@@ -65,6 +68,12 @@ class StatusNode(Node):
             String,
             '/drone/fc_gate_reason',
             self._fc_gate_reason_callback,
+            10,
+        )
+        self._rc_aux_subscription = self.create_subscription(
+            String,
+            '/drone/rc_aux_state',
+            self._rc_aux_callback,
             10,
         )
         self._timer = self.create_timer(
@@ -98,6 +107,10 @@ class StatusNode(Node):
         """Store the MAVROS adapter's active gate reason."""
         self._model.set_fc_gate_reason(message.data, time.monotonic())
 
+    def _rc_aux_callback(self, message: String) -> None:
+        """Store the optional RC auxiliary mode-selector state."""
+        self._model.set_rc_aux_state(message.data, time.monotonic())
+
     def _publish_status(self) -> None:
         """Publish matching compact and standard diagnostic messages."""
         summary = self._model.snapshot(time.monotonic())
@@ -120,6 +133,7 @@ class StatusNode(Node):
             self._key_value('fc_mode', summary.fc_mode),
             self._key_value('tracking_state', summary.tracking_state),
             self._key_value('target_locked', summary.target_locked),
+            self._key_value('rc_aux_state', summary.rc_aux_state),
             self._key_value(
                 'safety_stop_reason', summary.safety_stop_reason),
         ]

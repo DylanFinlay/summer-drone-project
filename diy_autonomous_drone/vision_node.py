@@ -8,6 +8,12 @@ from geometry_msgs.msg import Pose2D
 from rclpy.node import Node
 from std_msgs.msg import Bool, Int32
 
+from diy_autonomous_drone.gesture_recognizer import (
+    ArmGestureClassifier,
+    GESTURE_NONE as RECOGNIZED_GESTURE_NONE,
+    GestureDebouncer,
+    keypoints_from_values,
+)
 from diy_autonomous_drone.target_selector import BoundingBox, TargetSelector
 from diy_autonomous_drone.video_playback import VideoPlayback
 
@@ -30,7 +36,7 @@ except ImportError:  # pragma: no cover - optional vision dependency.
 class VisionNode(Node):
     """Own the camera and expose normalized vision observations to ROS."""
 
-    GESTURE_NONE = 0
+    GESTURE_NONE = RECOGNIZED_GESTURE_NONE
 
     def __init__(self) -> None:
         """Declare parameters, publishers, camera capture, and frame timer."""
@@ -56,6 +62,10 @@ class VisionNode(Node):
         self.declare_parameter('lock_iou_threshold', 0.15)
         self.declare_parameter('ambiguity_iou_margin', 0.05)
         self.declare_parameter('max_missed_frames', 5)
+        self.declare_parameter('enable_gesture_recognition', False)
+        self.declare_parameter('gesture_pose_model', 'yolo11n-pose.pt')
+        self.declare_parameter('gesture_min_keypoint_confidence', 0.55)
+        self.declare_parameter('gesture_confirm_frames', 4)
 
         self._camera_index = int(
             self.get_parameter('camera_index').value)
@@ -91,6 +101,19 @@ class VisionNode(Node):
             32, int(self.get_parameter('detector_image_size').value))
         self._person_class_id = max(
             0, int(self.get_parameter('person_class_id').value))
+        self._gesture_recognition_enabled = bool(
+            self.get_parameter('enable_gesture_recognition').value)
+        self._gesture_pose_model_path = str(
+            self.get_parameter('gesture_pose_model').value)
+        self._gesture_classifier = ArmGestureClassifier(
+            min_confidence=float(
+                self.get_parameter(
+                    'gesture_min_keypoint_confidence').value),
+        )
+        self._gesture_debouncer = GestureDebouncer(
+            confirm_frames=int(
+                self.get_parameter('gesture_confirm_frames').value),
+        )
 
         self._target_selector = TargetSelector(
             acquire_confirm_frames=max(
@@ -121,6 +144,7 @@ class VisionNode(Node):
         self._video_playback = None
         self._capture_failures = 0
         self._detector = None
+        self._pose_keypoints_by_box = {}
         self._inference_failures = 0
         self._load_detector()
         self._open_camera()
@@ -140,6 +164,10 @@ class VisionNode(Node):
         """Load the configured YOLO detector, failing closed on any error."""
         if not self._detection_enabled:
             self.get_logger().info('YOLO person detection is disabled.')
+            if self._gesture_recognition_enabled:
+                self.get_logger().error(
+                    'Gesture recognition requires object detection; gesture '
+                    'output is disabled.')
             return
         if YOLO is None:
             self.get_logger().error(
@@ -147,7 +175,12 @@ class VisionNode(Node):
             return
 
         try:
-            self._detector = YOLO(self._detector_model_path)
+            model_path = (
+                self._gesture_pose_model_path
+                if self._gesture_recognition_enabled
+                else self._detector_model_path
+            )
+            self._detector = YOLO(model_path)
         except Exception as error:
             self.get_logger().error(
                 'Unable to load YOLO model %r: %s'
@@ -156,7 +189,11 @@ class VisionNode(Node):
 
         self.get_logger().info(
             'Loaded YOLO person detector %r on %s.'
-            % (self._detector_model_path, self._detector_device))
+            % (model_path, self._detector_device))
+        if self._gesture_recognition_enabled:
+            self.get_logger().warning(
+                'Experimental pose gestures enabled; movement still requires '
+                'the gesture feature lock, gesture mode, and FC authority.')
 
     def _open_camera(self) -> None:
         """Open recorded video or select an available live-camera backend."""
@@ -284,12 +321,14 @@ class VisionNode(Node):
         success, frame, restarted = self._read_frame()
         if restarted:
             self._target_selector.reset()
+            self._gesture_debouncer.reset()
             self.get_logger().info(
                 'Recorded video restarted; cleared previous target lock.')
 
         if not success:
             if self._capture_backend == 'video':
                 self._target_selector.reset()
+            self._gesture_debouncer.reset()
             self._capture_failures += 1
             if self._capture_failures == 1 or \
                     self._capture_failures % self._fps == 0:
@@ -354,6 +393,7 @@ class VisionNode(Node):
         and 5=Right.
         """
         tracking_box = None
+        gesture_id = self.GESTURE_NONE
         if self._detector is not None:
             detections = self._detect_people(frame)
             frame_height, frame_width = frame.shape[:2]
@@ -372,10 +412,12 @@ class VisionNode(Node):
             if target is not None:
                 tracking_box = target.normalized_pose(
                     frame_width, frame_height)
+                if self._gesture_recognition_enabled:
+                    keypoints = self._pose_keypoints_by_box.get(target, ())
+                    gesture_id = self._gesture_classifier.classify(keypoints)
 
-        # TODO: Run MediaPipe Pose and replace GESTURE_NONE with a classified
-        # and suitably debounced gesture ID.
-        return tracking_box, self.GESTURE_NONE
+        confirmed_gesture = self._gesture_debouncer.update(gesture_id)
+        return tracking_box, confirmed_gesture
 
     def _detect_people(self, frame: object) -> Tuple[BoundingBox, ...]:
         """Run one YOLO inference and return confidence-filtered people."""
@@ -390,7 +432,13 @@ class VisionNode(Node):
                 verbose=False,
             )
             detections = self._boxes_from_results(results)
+            self._pose_keypoints_by_box = (
+                self._pose_keypoints_from_results(results, detections)
+                if self._gesture_recognition_enabled
+                else {}
+            )
         except Exception as error:
+            self._pose_keypoints_by_box = {}
             self._inference_failures += 1
             if self._inference_failures == 1 or \
                     self._inference_failures % self._fps == 0:
@@ -403,6 +451,22 @@ class VisionNode(Node):
             self.get_logger().info('YOLO inference recovered.')
         self._inference_failures = 0
         return detections
+
+    @staticmethod
+    def _pose_keypoints_from_results(results, detections):
+        """Associate YOLO pose keypoints with same-index person boxes."""
+        if not results or not detections:
+            return {}
+        keypoints = results[0].keypoints
+        if keypoints is None or keypoints.conf is None:
+            return {}
+        coordinates = keypoints.xyn.cpu().tolist()
+        confidences = keypoints.conf.cpu().tolist()
+        return {
+            box: keypoints_from_values(person_points, person_confidences)
+            for box, person_points, person_confidences in zip(
+                detections, coordinates, confidences)
+        }
 
     @staticmethod
     def _boxes_from_results(results) -> Tuple[BoundingBox, ...]:
