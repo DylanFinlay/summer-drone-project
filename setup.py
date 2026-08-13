@@ -44,6 +44,8 @@ setup(
             'fc_interface_node = '
             'diy_autonomous_drone.fc_interface_node:main',
             'status_node = diy_autonomous_drone.status_node:main',
+            'operator_mode_tool = '
+            'diy_autonomous_drone.operator_mode_tool:main',
             'sitl_smoke_test = '
             'diy_autonomous_drone.sitl_smoke_test:main',
         ],

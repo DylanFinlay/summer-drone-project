@@ -94,6 +94,17 @@ stops, MAVROS disconnects, incorrect RC flight modes, disarming, command
 freshness, target-loss transitions, invalid timing, and unsafe mode requests.
 Run them in the sourced Ubuntu workspace with `colcon test`.
 
+Before ending an intentional SITL or bench session, exercise the same orderly
+stop sequence intended for the field demo:
+
+```bash
+ros2 run diy_autonomous_drone operator_mode_tool prepare-shutdown
+```
+
+Confirm the reported mode is `hover`, then stop the launch with Ctrl+C. Also
+continue testing abrupt process termination separately; cleanup bursts are
+best-effort and do not replace watchdog behavior.
+
 ## Optional simulated authority check
 
 Only after the zero-command smoke test passes, the simulated FC can be moved

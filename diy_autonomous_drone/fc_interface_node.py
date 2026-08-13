@@ -13,6 +13,7 @@ from diy_autonomous_drone.safety_policy import (
     fc_authority_block_reason,
     fc_command_gate_reason,
 )
+from diy_autonomous_drone.shutdown_safety import publish_zero_burst
 
 
 class FlightControllerInterfaceNode(Node):
@@ -150,6 +151,21 @@ class FlightControllerInterfaceNode(Node):
         message.data = reason or ''
         self._gate_reason_publisher.publish(message)
 
+    def publish_shutdown_stop(self) -> int:
+        """Best-effort repeated zero setpoints before orderly teardown."""
+        def zero_setpoint():
+            output = TwistStamped()
+            output.header.stamp = self.get_clock().now().to_msg()
+            output.header.frame_id = 'base_link'
+            return output
+
+        return publish_zero_burst(
+            self._velocity_publisher,
+            zero_setpoint,
+            count=5,
+            interval_sec=0.025,
+        )
+
 
 def main(args=None) -> None:
     """Run the MAVROS safety adapter until ROS shuts down."""
@@ -160,6 +176,8 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         node.get_logger().info('MAVROS safety adapter interrupted by user.')
     finally:
+        if rclpy.ok():
+            node.publish_shutdown_stop()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

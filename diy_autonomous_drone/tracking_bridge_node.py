@@ -18,6 +18,7 @@ from diy_autonomous_drone.autonomy_modes import (
     mode_rejection_reason,
     normalized_mode,
 )
+from diy_autonomous_drone.shutdown_safety import publish_zero_burst
 from diy_autonomous_drone.tracking_filter import (
     TargetObservationFilter,
     apply_continuous_deadband,
@@ -221,7 +222,7 @@ class TrackingBridgeNode(Node):
             )
         self._publish_autonomy_mode()
 
-    def _stop_and_clear_inputs(self) -> None:
+    def _stop_and_clear_inputs(self, publish_stop: bool = True) -> None:
         """Stop immediately and invalidate data from the previous mode."""
         self._latest_target = None
         self._latest_target_time = None
@@ -231,7 +232,8 @@ class TrackingBridgeNode(Node):
         previous_state = self._target_loss_state.state
         self._target_loss_state.reset()
         self._velocity_limiter.reset()
-        self._command_publisher.publish(Twist())
+        if publish_stop:
+            self._command_publisher.publish(Twist())
         self._report_tracking_state_change(previous_state)
 
     def _tracking_callback(self, message: Pose2D) -> None:
@@ -480,6 +482,16 @@ class TrackingBridgeNode(Node):
         """Clamp a number to an inclusive range."""
         return max(lower, min(upper, float(value)))
 
+    def publish_shutdown_stop(self) -> int:
+        """Best-effort repeated zero output before orderly node teardown."""
+        self._stop_and_clear_inputs(publish_stop=False)
+        return publish_zero_burst(
+            self._command_publisher,
+            Twist,
+            count=5,
+            interval_sec=0.025,
+        )
+
 
 def main(args=None) -> None:
     """Run the tracking bridge node until ROS shuts down."""
@@ -490,6 +502,8 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         node.get_logger().info('Tracking bridge interrupted by user.')
     finally:
+        if rclpy.ok():
+            node.publish_shutdown_stop()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

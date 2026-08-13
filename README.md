@@ -133,6 +133,22 @@ ros2 param set /tracking_bridge_node autonomy_mode hover
 ros2 param set /tracking_bridge_node enable_gesture_control false
 ```
 
+For routine demo operation, the one-shot operator tool is simpler and checks
+the tracking node's response before reporting success:
+
+```bash
+ros2 run diy_autonomous_drone operator_mode_tool status
+ros2 run diy_autonomous_drone operator_mode_tool hover
+ros2 run diy_autonomous_drone operator_mode_tool track
+
+# These remain deliberate explicit operations for the experimental feature.
+ros2 run diy_autonomous_drone operator_mode_tool gesture
+ros2 run diy_autonomous_drone operator_mode_tool lock-gesture
+```
+
+This tool changes only ROS autonomy parameters. It cannot arm/disarm, change
+ArduPilot flight mode, or override the physical RC authority switch.
+
 Invalid modes are rejected without changing the active mode. This ROS setting
 only chooses what command generator runs; it cannot arm the vehicle or select
 ArduPilot Guided mode. The physical RC mode switch remains the master gate.
@@ -229,6 +245,24 @@ data, target visibility, safety reasons, diagnostics, and MAVROS state. Camera
 images are deliberately excluded to keep files small. Stop the launch cleanly
 with Ctrl+C so rosbag can finalize its metadata. Inspect or replay a bag with
 `ros2 bag info BAG_DIRECTORY` and `ros2 bag play BAG_DIRECTORY`.
+
+## Orderly shutdown
+
+Before intentionally stopping an active stack, prepare it from another
+sourced terminal:
+
+```bash
+ros2 run diy_autonomous_drone operator_mode_tool prepare-shutdown
+```
+
+The command confirms that the requested mode is `hover` and publishes ten
+zero commands through the normal safety-supervisor path.
+After it reports success, stop the launch with Ctrl+C. During orderly node
+teardown, each command-producing stage also attempts five final zero messages.
+
+This is not the crash failsafe: a killed, frozen, or disconnected process may
+not execute cleanup code. The independent command/target/MAVROS watchdogs and
+ArduPilot's configured Guided timeout remain responsible for those failures.
 
 ## Camera
 

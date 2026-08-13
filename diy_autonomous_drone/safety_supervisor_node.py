@@ -8,6 +8,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 from diy_autonomous_drone.safety_policy import supervisor_fault_reason
+from diy_autonomous_drone.shutdown_safety import publish_zero_burst
 
 
 class SafetySupervisorNode(Node):
@@ -127,6 +128,15 @@ class SafetySupervisorNode(Node):
         """Return elapsed ROS-clock seconds between two time objects."""
         return (now - then).nanoseconds / 1_000_000_000.0
 
+    def publish_shutdown_stop(self) -> int:
+        """Best-effort repeated zero output before orderly node teardown."""
+        return publish_zero_burst(
+            self._safe_command_publisher,
+            Twist,
+            count=5,
+            interval_sec=0.025,
+        )
+
 
 def main(args=None) -> None:
     """Run the safety supervisor node until ROS shuts down."""
@@ -137,6 +147,8 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         node.get_logger().info('Safety supervisor interrupted by user.')
     finally:
+        if rclpy.ok():
+            node.publish_shutdown_stop()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
