@@ -61,6 +61,22 @@ it is loaded. Do that while internet access is available, before field tests.
 Alternatively, put the model on the Pi and set `detector_model` in
 `config/params.yaml` to its absolute path.
 
+## Raspberry Pi deployment
+
+After installing ROS 2 Jazzy on Ubuntu 24.04, the repository includes an
+idempotent bootstrap for apt/rosdep dependencies, the project virtual
+environment, MAVROS datasets, and the colcon build:
+
+```bash
+scripts/bootstrap_pi.sh --run-tests
+```
+
+Optional systemd assets are also included for later field convenience. Their
+installer never enables or starts the service, and its initial environment
+keeps the FC interface and all experimental inputs disabled. Complete the
+[deployment guide](docs/DEPLOYMENT.md) and interactive props-off checks before
+enabling boot startup.
+
 ### Recorded-video perception test
 
 Use a saved video to exercise YOLO, target selection, target loss, filtering,

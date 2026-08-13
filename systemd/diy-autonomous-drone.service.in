@@ -1,0 +1,31 @@
+[Unit]
+Description=DIY Autonomous Drone ROS 2 stack
+Documentation=https://github.com/DylanFinlay/summer-drone-project
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=30
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+SupplementaryGroups=dialout video
+WorkingDirectory=@PROJECT_ROOT@
+Environment=ROS_DISTRO=jazzy
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/diy-autonomous-drone/environment
+ExecStart=@PROJECT_ROOT@/scripts/run_drone_service.sh
+KillSignal=SIGINT
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=3
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

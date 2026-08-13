@@ -1,9 +1,11 @@
+.venv/
 build/
 install/
 log/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.ros/
 yolo*.pt
 .vscode/
 .DS_Store
