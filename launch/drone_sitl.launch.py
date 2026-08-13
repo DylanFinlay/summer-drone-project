@@ -14,6 +14,9 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
+from diy_autonomous_drone.configuration_profiles import (
+    CONFIGURATION_PROFILES,
+)
 from diy_autonomous_drone.flight_logging import default_flight_log_directory
 from diy_autonomous_drone.sitl_support import sim_vehicle_arguments
 
@@ -64,6 +67,12 @@ def generate_launch_description():
             'parameter_file',
             default_value=default_parameter_file,
             description='ROS parameter YAML file for the simulated stack.',
+        ),
+        DeclareLaunchArgument(
+            'configuration_profile',
+            default_value='simulation',
+            choices=list(CONFIGURATION_PROFILES),
+            description='Parameter overlay for the simulated stack.',
         ),
         DeclareLaunchArgument(
             'autonomy_mode',
@@ -119,6 +128,8 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(main_launch_file),
         launch_arguments={
             'parameter_file': LaunchConfiguration('parameter_file'),
+            'configuration_profile': LaunchConfiguration(
+                'configuration_profile'),
             'autonomy_mode': LaunchConfiguration('autonomy_mode'),
             'enable_gesture_control': 'false',
             'enable_vision': LaunchConfiguration('enable_vision'),

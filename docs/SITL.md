@@ -40,6 +40,10 @@ Add `enable_flight_logging:=true` to capture the complete low-bandwidth
 decision and command path for later inspection. Logging is disabled by
 default and excludes camera images.
 
+The SITL launch selects `configuration_profile:=simulation` by default. The
+main hardware launch instead defaults to `bench`; `outdoor_demo` must always
+be selected deliberately.
+
 The first run compiles ArduCopter and can take several minutes. MAVROS may
 restart while TCP port 5760 is unavailable and will connect once SITL begins
 listening. Simulator state and logs are kept under

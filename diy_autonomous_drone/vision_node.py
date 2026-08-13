@@ -1,5 +1,6 @@
 """Capture camera frames and publish target and gesture observations."""
 
+import os
 from typing import Optional, Tuple
 
 import rclpy
@@ -8,6 +9,7 @@ from rclpy.node import Node
 from std_msgs.msg import Bool, Int32
 
 from diy_autonomous_drone.target_selector import BoundingBox, TargetSelector
+from diy_autonomous_drone.video_playback import VideoPlayback
 
 try:
     import cv2
@@ -36,6 +38,8 @@ class VisionNode(Node):
 
         self.declare_parameter('camera_index', 0)
         self.declare_parameter('camera_backend', 'auto')
+        self.declare_parameter('video_file', '')
+        self.declare_parameter('loop_video', False)
         self.declare_parameter('frame_width', 640)
         self.declare_parameter('frame_height', 480)
         self.declare_parameter('fps', 20)
@@ -57,6 +61,14 @@ class VisionNode(Node):
             self.get_parameter('camera_index').value)
         self._requested_backend = str(
             self.get_parameter('camera_backend').value).strip().lower()
+        requested_video_file = str(
+            self.get_parameter('video_file').value).strip()
+        self._video_file = (
+            os.path.abspath(os.path.expanduser(requested_video_file))
+            if requested_video_file else ''
+        )
+        self._loop_video = bool(
+            self.get_parameter('loop_video').value)
         self._frame_width = max(
             1, int(self.get_parameter('frame_width').value))
         self._frame_height = max(
@@ -106,6 +118,7 @@ class VisionNode(Node):
 
         self._capture = None
         self._capture_backend = None
+        self._video_playback = None
         self._capture_failures = 0
         self._detector = None
         self._inference_failures = 0
@@ -114,15 +127,14 @@ class VisionNode(Node):
         self._frame_timer = self.create_timer(
             1.0 / float(self._fps), self._process_next_frame)
 
-        self.get_logger().info(
-            'Vision node started: camera=%d, resolution=%dx%d, fps=%d'
-            % (
-                self._camera_index,
-                self._frame_width,
-                self._frame_height,
-                self._fps,
-            )
+        source = (
+            self._video_file
+            if self._video_file
+            else 'camera %d' % self._camera_index
         )
+        self.get_logger().info(
+            'Vision node started: source=%s, resolution=%dx%d, fps=%d'
+            % (source, self._frame_width, self._frame_height, self._fps))
 
     def _load_detector(self) -> None:
         """Load the configured YOLO detector, failing closed on any error."""
@@ -147,10 +159,24 @@ class VisionNode(Node):
             % (self._detector_model_path, self._detector_device))
 
     def _open_camera(self) -> None:
-        """Open Picamera2 when available, then fall back to OpenCV."""
-        if self._requested_backend not in {'auto', 'picamera2', 'opencv'}:
+        """Open recorded video or select an available live-camera backend."""
+        supported_backends = {'auto', 'picamera2', 'opencv', 'video'}
+        if self._requested_backend not in supported_backends:
             self.get_logger().error(
                 'Unknown camera backend %r.' % self._requested_backend)
+            return
+
+        if self._video_file:
+            if self._requested_backend not in {'auto', 'video'}:
+                self.get_logger().error(
+                    'video_file cannot be combined with camera backend %r.'
+                    % self._requested_backend)
+                return
+            self._open_video()
+            return
+        if self._requested_backend == 'video':
+            self.get_logger().error(
+                'The video backend requires a nonempty video_file.')
             return
 
         if self._requested_backend in {'auto', 'picamera2'}:
@@ -160,6 +186,36 @@ class VisionNode(Node):
                 return
 
         self._open_opencv()
+
+    def _open_video(self) -> bool:
+        """Open a local recorded-video file through OpenCV."""
+        if cv2 is None:
+            self.get_logger().error(
+                'OpenCV is unavailable; recorded video cannot be opened.')
+            return False
+        if not os.path.isfile(self._video_file):
+            self.get_logger().error(
+                'Recorded video does not exist: %r.' % self._video_file)
+            return False
+
+        capture = cv2.VideoCapture(self._video_file)
+        if not capture.isOpened():
+            capture.release()
+            self.get_logger().error(
+                'Unable to open recorded video %r.' % self._video_file)
+            return False
+
+        self._capture = capture
+        self._capture_backend = 'video'
+        self._video_playback = VideoPlayback(
+            capture=capture,
+            loop_enabled=self._loop_video,
+            position_property=cv2.CAP_PROP_POS_FRAMES,
+        )
+        self.get_logger().info(
+            'Using recorded video %r (loop=%s).'
+            % (self._video_file, self._loop_video))
+        return True
 
     def _open_picamera2(self) -> bool:
         """Open the Raspberry Pi libcamera-backed Python interface."""
@@ -225,20 +281,24 @@ class VisionNode(Node):
         if self._capture is None:
             return
 
-        if self._capture_backend == 'picamera2':
-            try:
-                frame = self._capture.capture_array('main')
-                success = frame is not None
-            except Exception:
-                success, frame = False, None
-        else:
-            success, frame = self._capture.read()
+        success, frame, restarted = self._read_frame()
+        if restarted:
+            self._target_selector.reset()
+            self.get_logger().info(
+                'Recorded video restarted; cleared previous target lock.')
 
         if not success:
+            if self._capture_backend == 'video':
+                self._target_selector.reset()
             self._capture_failures += 1
             if self._capture_failures == 1 or \
                     self._capture_failures % self._fps == 0:
-                self.get_logger().warning('Camera frame capture failed.')
+                if self._capture_backend == 'video':
+                    self.get_logger().warning(
+                        'Recorded video ended or could not provide a frame.')
+                else:
+                    self.get_logger().warning('Camera frame capture failed.')
+            self._publish_empty_observation()
             return
         self._capture_failures = 0
 
@@ -257,6 +317,30 @@ class VisionNode(Node):
 
         gesture_message = Int32()
         gesture_message.data = int(gesture_id)
+        self._gesture_publisher.publish(gesture_message)
+
+    def _read_frame(self):
+        """Read one live or recorded frame and report video loop restarts."""
+        if self._capture_backend == 'picamera2':
+            try:
+                frame = self._capture.capture_array('main')
+                return frame is not None, frame, False
+            except Exception:
+                return False, None, False
+        if self._capture_backend == 'video':
+            result = self._video_playback.read()
+            return result.success, result.frame, result.restarted
+        success, frame = self._capture.read()
+        return success and frame is not None, frame, False
+
+    def _publish_empty_observation(self) -> None:
+        """Publish immediate target loss and no gesture after a read fault."""
+        visibility_message = Bool()
+        visibility_message.data = False
+        self._target_visibility_publisher.publish(visibility_message)
+
+        gesture_message = Int32()
+        gesture_message.data = self.GESTURE_NONE
         self._gesture_publisher.publish(gesture_message)
 
     def _infer_observations(
@@ -359,6 +443,7 @@ class VisionNode(Node):
                 self._capture.release()
             self._capture = None
             self._capture_backend = None
+            self._video_playback = None
         return super().destroy_node()
 
 

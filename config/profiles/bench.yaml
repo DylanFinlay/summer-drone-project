@@ -1,0 +1,18 @@
+# Props-off and perception development defaults. This is the launch default.
+vision_node:
+  ros__parameters:
+    fps: 10
+    detector_image_size: 320
+
+tracking_bridge_node:
+  ros__parameters:
+    max_linear_speed: 0.10
+    max_angular_speed: 0.15
+    max_linear_acceleration: 0.20
+    max_yaw_acceleration: 0.30
+    gesture_speed: 0.10
+
+fc_interface_node:
+  ros__parameters:
+    require_guided_mode: true
+    require_armed: true

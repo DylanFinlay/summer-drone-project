@@ -15,6 +15,9 @@ from diy_autonomous_drone.flight_logging import (
     default_flight_log_directory,
     rosbag_record_arguments,
 )
+from diy_autonomous_drone.configuration_profiles import (
+    CONFIGURATION_PROFILES,
+)
 
 
 def generate_launch_description():
@@ -26,14 +29,28 @@ def generate_launch_description():
     mavros_overrides = os.path.join(
         package_share, 'config', 'mavros_overrides.yaml')
     parameter_file = LaunchConfiguration('parameter_file')
+    configuration_profile = LaunchConfiguration('configuration_profile')
+    profile_parameter_file = PathJoinSubstitution([
+        package_share,
+        'config',
+        'profiles',
+        [configuration_profile, '.yaml'],
+    ])
     autonomy_mode = LaunchConfiguration('autonomy_mode')
     mavros_share = FindPackageShare('mavros')
 
     launch_arguments = [
         DeclareLaunchArgument(
+            'configuration_profile',
+            default_value='bench',
+            choices=list(CONFIGURATION_PROFILES),
+            description='Parameter overlay: simulation, bench, or outdoor.',
+        ),
+        DeclareLaunchArgument(
             'parameter_file',
             default_value=default_parameter_file,
-            description='ROS parameter YAML file for the drone stack.',
+            description=(
+                'Base ROS parameter YAML; the profile is applied after it.'),
         ),
         DeclareLaunchArgument(
             'autonomy_mode',
@@ -55,6 +72,16 @@ def generate_launch_description():
             'enable_object_detection',
             default_value='true',
             description='Run YOLO person detection in the vision node.',
+        ),
+        DeclareLaunchArgument(
+            'video_file',
+            default_value='',
+            description='Optional local video file used instead of a camera.',
+        ),
+        DeclareLaunchArgument(
+            'loop_video',
+            default_value='false',
+            description='Restart recorded video with a cleared target lock.',
         ),
         DeclareLaunchArgument(
             'enable_tracking',
@@ -106,9 +133,18 @@ def generate_launch_description():
             output='screen',
             parameters=[
                 parameter_file,
+                profile_parameter_file,
                 {
                     'enable_object_detection': ParameterValue(
                         LaunchConfiguration('enable_object_detection'),
+                        value_type=bool,
+                    ),
+                    'video_file': ParameterValue(
+                        LaunchConfiguration('video_file'),
+                        value_type=str,
+                    ),
+                    'loop_video': ParameterValue(
+                        LaunchConfiguration('loop_video'),
                         value_type=bool,
                     ),
                 },
@@ -122,6 +158,7 @@ def generate_launch_description():
             output='screen',
             parameters=[
                 parameter_file,
+                profile_parameter_file,
                 {
                     'autonomy_mode': ParameterValue(
                         autonomy_mode,
@@ -140,7 +177,7 @@ def generate_launch_description():
             executable='safety_supervisor_node',
             name='safety_supervisor_node',
             output='screen',
-            parameters=[parameter_file],
+            parameters=[parameter_file, profile_parameter_file],
         ),
         Node(
             package=package_name,
@@ -149,6 +186,7 @@ def generate_launch_description():
             output='screen',
             parameters=[
                 parameter_file,
+                profile_parameter_file,
                 {
                     'expect_fc_interface': ParameterValue(
                         LaunchConfiguration('enable_fc_interface'),
@@ -199,7 +237,7 @@ def generate_launch_description():
             executable='fc_interface_node',
             name='fc_interface_node',
             output='screen',
-            parameters=[parameter_file],
+            parameters=[parameter_file, profile_parameter_file],
             condition=IfCondition(
                 LaunchConfiguration('enable_fc_interface')),
             respawn=True,

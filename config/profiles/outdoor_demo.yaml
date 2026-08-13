@@ -1,0 +1,19 @@
+# Conservative starting values; tune only after SITL and props-off checks.
+vision_node:
+  ros__parameters:
+    fps: 20
+    detector_confidence: 0.60
+    acquire_confirm_frames: 4
+
+tracking_bridge_node:
+  ros__parameters:
+    max_linear_speed: 0.25
+    max_angular_speed: 0.30
+    max_linear_acceleration: 0.40
+    max_yaw_acceleration: 0.60
+    gesture_speed: 0.15
+
+fc_interface_node:
+  ros__parameters:
+    require_guided_mode: true
+    require_armed: true

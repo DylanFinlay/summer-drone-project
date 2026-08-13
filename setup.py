@@ -18,6 +18,8 @@ setup(
             glob(os.path.join('launch', '*.launch.py'))),
         (os.path.join('share', package_name, 'config'),
             glob(os.path.join('config', '*.yaml'))),
+        (os.path.join('share', package_name, 'config', 'profiles'),
+            glob(os.path.join('config', 'profiles', '*.yaml'))),
         (os.path.join('share', package_name, 'docs'),
             glob(os.path.join('docs', '*.md'))),
     ],

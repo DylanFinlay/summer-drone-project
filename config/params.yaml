@@ -2,6 +2,8 @@ vision_node:
   ros__parameters:
     camera_index: 0
     camera_backend: auto
+    video_file: ''
+    loop_video: false
     frame_width: 640
     frame_height: 480
     fps: 20

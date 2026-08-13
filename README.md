@@ -61,6 +61,22 @@ it is loaded. Do that while internet access is available, before field tests.
 Alternatively, put the model on the Pi and set `detector_model` in
 `config/params.yaml` to its absolute path.
 
+### Recorded-video perception test
+
+Use a saved video to exercise YOLO, target selection, target loss, filtering,
+and command generation without a camera or flight-controller connection:
+
+```bash
+ros2 launch diy_autonomous_drone drone_video.launch.py \
+  video_file:=/absolute/path/to/test-video.mp4
+```
+
+The dedicated launch always disables MAVROS and the FC interface. Add
+`loop_video:=true` for repeat testing. Every loop clears target identity and
+requires normal multi-frame reacquisition. EOF, a corrupt frame, or a failed
+rewind publishes target loss immediately. Add `enable_flight_logging:=true`
+to record the resulting low-bandwidth decisions for comparison.
+
 ## Demo modes
 
 The launch file defaults to the safest useful configuration: no camera and a
@@ -145,15 +161,39 @@ Launch toggles:
 - `enable_gesture_control`: unlocks the experimental gesture mode
 - `enable_vision`: starts camera capture and inference hooks
 - `enable_object_detection`: loads and runs the YOLO person detector
+- `video_file`: replaces the live camera with a local recorded video
+- `loop_video`: safely restarts video with cleared target identity
 - `enable_tracking`: starts autonomous command generation
 - `enable_fc_interface`: starts MAVROS and its command safety adapter
 - `enable_flight_logging`: records selected control and state topics to rosbag
 - `flight_log_directory`: overrides the timestamped rosbag output directory
 - `fcu_url`: selects the MAVROS serial, UDP, TCP, or SITL connection
 - `gcs_url`: optionally forwards MAVLink traffic to a ground station
-- `parameter_file`: selects an alternative complete YAML configuration
+- `configuration_profile`: `simulation`, `bench`, or `outdoor_demo`
+- `parameter_file`: selects the base YAML before the profile overlay
 
 The safety supervisor is deliberately not optional in the launch file.
+
+## Configuration profiles
+
+The main launch defaults to the `bench` profile. Profiles are small overlays
+applied after `config/params.yaml`, so shared detector and safety settings stay
+in one place:
+
+- `simulation`: moderate limits for ArduPilot SITL.
+- `bench`: lowest movement limits for props-off and perception work.
+- `outdoor_demo`: conservative starting limits for the eventual field demo.
+
+Select one explicitly with, for example:
+
+```bash
+ros2 launch diy_autonomous_drone drone_autonomous.launch.py \
+  configuration_profile:=outdoor_demo
+```
+
+Every profile keeps the Guided-mode and armed-state FC gates enabled. The
+outdoor values are starting points, not validated tuning; keep the `bench`
+profile until SITL, props-off, and manual-flight checks are complete.
 
 ## Live status and diagnostics
 

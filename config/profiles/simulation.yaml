@@ -1,0 +1,17 @@
+# Software-in-the-loop defaults. FC authority gates remain enabled.
+vision_node:
+  ros__parameters:
+    fps: 15
+    detector_image_size: 320
+
+tracking_bridge_node:
+  ros__parameters:
+    max_linear_speed: 0.20
+    max_angular_speed: 0.30
+    max_linear_acceleration: 0.40
+    max_yaw_acceleration: 0.60
+
+fc_interface_node:
+  ros__parameters:
+    require_guided_mode: true
+    require_armed: true
