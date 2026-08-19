@@ -3,11 +3,6 @@
 import os
 from typing import Optional, Tuple
 
-import rclpy
-from geometry_msgs.msg import Pose2D
-from rclpy.node import Node
-from std_msgs.msg import Bool, Int32
-
 from diy_autonomous_drone.gesture_recognizer import (
     ArmGestureClassifier,
     GESTURE_NONE as RECOGNIZED_GESTURE_NONE,
@@ -16,6 +11,10 @@ from diy_autonomous_drone.gesture_recognizer import (
 )
 from diy_autonomous_drone.target_selector import BoundingBox, TargetSelector
 from diy_autonomous_drone.video_playback import VideoPlayback
+from geometry_msgs.msg import Pose2D
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Bool, Int32
 
 try:
     import cv2

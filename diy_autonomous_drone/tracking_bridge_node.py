@@ -4,14 +4,6 @@ import math
 import time
 from typing import Optional
 
-import rclpy
-from geometry_msgs.msg import Pose2D, Twist
-from mavros_msgs.msg import RCIn
-from rcl_interfaces.msg import SetParametersResult
-from rclpy.node import Node
-from rclpy.parameter import Parameter
-from std_msgs.msg import Bool, Int32, String
-
 from diy_autonomous_drone.autonomy_modes import (
     MODE_ACTIVE_TRACK,
     MODE_GESTURE_CONTROL,
@@ -21,15 +13,22 @@ from diy_autonomous_drone.autonomy_modes import (
 )
 from diy_autonomous_drone.rc_aux_selector import RcAuxModeSelector
 from diy_autonomous_drone.shutdown_safety import publish_zero_burst
-from diy_autonomous_drone.tracking_filter import (
-    TargetObservationFilter,
-    apply_continuous_deadband,
-)
 from diy_autonomous_drone.target_loss_state import (
     TargetLossStateMachine,
     TargetTrackingState,
 )
+from diy_autonomous_drone.tracking_filter import (
+    apply_continuous_deadband,
+    TargetObservationFilter,
+)
 from diy_autonomous_drone.velocity_limiter import VelocityLimiter
+from geometry_msgs.msg import Pose2D, Twist
+from mavros_msgs.msg import RCIn
+from rcl_interfaces.msg import SetParametersResult
+import rclpy
+from rclpy.node import Node
+from rclpy.parameter import Parameter
+from std_msgs.msg import Bool, Int32, String
 
 
 class TrackingBridgeNode(Node):

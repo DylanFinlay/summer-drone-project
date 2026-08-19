@@ -4,8 +4,8 @@ from datetime import datetime
 import unittest
 
 from diy_autonomous_drone.flight_logging import (
-    FLIGHT_LOG_TOPICS,
     default_flight_log_directory,
+    FLIGHT_LOG_TOPICS,
     rosbag_record_arguments,
 )
 

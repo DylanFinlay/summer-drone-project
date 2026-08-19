@@ -4,8 +4,8 @@ import unittest
 
 from diy_autonomous_drone.target_selector import (
     BoundingBox,
-    TargetSelector,
     intersection_over_union,
+    TargetSelector,
 )
 
 

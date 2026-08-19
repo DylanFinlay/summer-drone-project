@@ -5,15 +5,14 @@ import math
 import sys
 import time
 
+from diy_autonomous_drone.operator_control import command_plan
+from diy_autonomous_drone.shutdown_safety import publish_zero_burst
 from geometry_msgs.msg import Twist
 import rclpy
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.parameter_client import AsyncParameterClient
 from rclpy.utilities import remove_ros_args
-
-from diy_autonomous_drone.operator_control import command_plan
-from diy_autonomous_drone.shutdown_safety import publish_zero_burst
 
 
 class OperatorModeTool(Node):

@@ -5,12 +5,11 @@ import math
 import time
 
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from diy_autonomous_drone.status_summary import DroneStatusModel
 from mavros_msgs.msg import State
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-
-from diy_autonomous_drone.status_summary import DroneStatusModel
 
 
 class StatusNode(Node):

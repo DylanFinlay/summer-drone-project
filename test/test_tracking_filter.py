@@ -3,8 +3,8 @@
 import unittest
 
 from diy_autonomous_drone.tracking_filter import (
-    TargetObservationFilter,
     apply_continuous_deadband,
+    TargetObservationFilter,
 )
 
 

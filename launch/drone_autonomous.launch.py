@@ -3,6 +3,13 @@
 import os
 
 from ament_index_python.packages import get_package_share_directory
+from diy_autonomous_drone.configuration_profiles import (
+    CONFIGURATION_PROFILES,
+)
+from diy_autonomous_drone.flight_logging import (
+    default_flight_log_directory,
+    rosbag_record_arguments,
+)
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
@@ -10,14 +17,6 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
-
-from diy_autonomous_drone.flight_logging import (
-    default_flight_log_directory,
-    rosbag_record_arguments,
-)
-from diy_autonomous_drone.configuration_profiles import (
-    CONFIGURATION_PROFILES,
-)
 
 
 def generate_launch_description():

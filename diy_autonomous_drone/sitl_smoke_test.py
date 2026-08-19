@@ -3,9 +3,9 @@
 import time
 from typing import Optional
 
-import rclpy
 from geometry_msgs.msg import Twist, TwistStamped
 from mavros_msgs.msg import State
+import rclpy
 from rclpy.node import Node
 
 

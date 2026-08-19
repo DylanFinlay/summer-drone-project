@@ -3,6 +3,11 @@
 import os
 
 from ament_index_python.packages import get_package_share_directory
+from diy_autonomous_drone.configuration_profiles import (
+    CONFIGURATION_PROFILES,
+)
+from diy_autonomous_drone.flight_logging import default_flight_log_directory
+from diy_autonomous_drone.sitl_support import sim_vehicle_arguments
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -13,12 +18,6 @@ from launch.actions import (
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-
-from diy_autonomous_drone.configuration_profiles import (
-    CONFIGURATION_PROFILES,
-)
-from diy_autonomous_drone.flight_logging import default_flight_log_directory
-from diy_autonomous_drone.sitl_support import sim_vehicle_arguments
 
 
 def generate_launch_description():

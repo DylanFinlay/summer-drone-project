@@ -18,7 +18,13 @@ class FakeCapture:
         """Return the next scripted capture result."""
         return self._reads.pop(0)
 
-    def set(self, property_id, value):
+    def __getattr__(self, name):
+        """Expose the OpenCV-style set operation without builtin shadowing."""
+        if name == 'set':
+            return self.set_property
+        raise AttributeError(name)
+
+    def set_property(self, property_id, value):
         """Record one rewind request and report its configured result."""
         self.set_calls.append((property_id, value))
         return self._rewind_succeeds

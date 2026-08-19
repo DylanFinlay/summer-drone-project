@@ -2,13 +2,12 @@
 
 from typing import Optional
 
-import rclpy
-from geometry_msgs.msg import Pose2D, Twist
-from rclpy.node import Node
-from std_msgs.msg import String
-
 from diy_autonomous_drone.safety_policy import supervisor_fault_reason
 from diy_autonomous_drone.shutdown_safety import publish_zero_burst
+from geometry_msgs.msg import Pose2D, Twist
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
 
 
 class SafetySupervisorNode(Node):

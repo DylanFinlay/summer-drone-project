@@ -10,8 +10,8 @@ from diy_autonomous_drone.gesture_recognizer import (
     GESTURE_RIGHT,
     GESTURE_UP,
     GestureDebouncer,
-    PoseKeypoint,
     keypoints_from_values,
+    PoseKeypoint,
 )
 
 

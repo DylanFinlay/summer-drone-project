@@ -1,7 +1,7 @@
 """Static safety and syntax tests for Pi deployment assets."""
 
-from pathlib import Path
 import os
+from pathlib import Path
 import re
 import subprocess
 import unittest

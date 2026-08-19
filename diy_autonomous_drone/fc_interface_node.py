@@ -3,17 +3,16 @@
 import time
 from typing import Optional, Tuple
 
-import rclpy
-from geometry_msgs.msg import Twist, TwistStamped
-from mavros_msgs.msg import State
-from rclpy.node import Node
-from std_msgs.msg import String
-
 from diy_autonomous_drone.safety_policy import (
     fc_authority_block_reason,
     fc_command_gate_reason,
 )
 from diy_autonomous_drone.shutdown_safety import publish_zero_burst
+from geometry_msgs.msg import Twist, TwistStamped
+from mavros_msgs.msg import State
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
 
 
 class FlightControllerInterfaceNode(Node):

@@ -1,7 +1,7 @@
 """Hardware-independent target-loss state machine."""
 
-import math
 from enum import Enum
+import math
 from typing import Optional
 
 
