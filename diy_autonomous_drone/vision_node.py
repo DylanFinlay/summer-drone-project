@@ -384,7 +384,8 @@ class VisionNode(Node):
     def _infer_observations(
         self, frame: object
     ) -> Tuple[Optional[Tuple[float, float, float]], int]:
-        """Detect and lock one person, returning a normalized observation.
+        """
+        Detect and lock one person, returning a normalized observation.
 
         The tracking tuple is ``(center_x, center_y, box_height)``. A missing
         target is represented by ``None`` so downstream watchdogs can detect
