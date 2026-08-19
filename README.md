@@ -14,7 +14,7 @@ Raspberry Pi:
 ```bash
 sudo apt update
 sudo apt install ros-jazzy-mavros ros-jazzy-mavros-msgs
-ros2 run mavros install_geographiclib_datasets.sh
+sudo "$(ros2 pkg prefix mavros)/lib/mavros/install_geographiclib_datasets.sh"
 ```
 
 The GeographicLib dataset is required by MAVROS even though this project only

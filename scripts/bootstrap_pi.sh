@@ -9,6 +9,23 @@ VENV_PATH="${PROJECT_ROOT}/.venv"
 INSTALL_VISION=true
 RUN_TESTS=false
 
+source_environment() {
+    # ROS/ament-generated setup files read some optional variables without
+    # default expansions, so they are not compatible with Bash nounset mode.
+    local nounset_was_enabled=false
+    if [[ $- == *u* ]]; then
+        nounset_was_enabled=true
+        set +u
+    fi
+
+    # shellcheck disable=SC1090
+    source "$1"
+
+    if [[ "${nounset_was_enabled}" == true ]]; then
+        set -u
+    fi
+}
+
 usage() {
     printf '%s\n' \
         'Usage: scripts/bootstrap_pi.sh [--skip-vision] [--run-tests]' \
@@ -48,8 +65,7 @@ if [[ ! -r /etc/os-release ]]; then
     exit 1
 fi
 
-# shellcheck disable=SC1091
-source /etc/os-release
+source_environment /etc/os-release
 if [[ "${ID:-}" != 'ubuntu' || "${VERSION_ID:-}" != '24.04' ]]; then
     printf '%s\n' \
         'This bootstrap supports Ubuntu 24.04 only; refusing to guess.' >&2
@@ -87,8 +103,7 @@ if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then
 fi
 rosdep update
 
-# shellcheck disable=SC1090
-source "${ROS_SETUP}"
+source_environment "${ROS_SETUP}"
 rosdep install \
     --from-paths "${PROJECT_ROOT}" \
     --ignore-src \
@@ -99,8 +114,7 @@ if [[ ! -d "${VENV_PATH}" ]]; then
     python3 -m venv --system-site-packages "${VENV_PATH}"
 fi
 touch "${VENV_PATH}/COLCON_IGNORE"
-# shellcheck disable=SC1091
-source "${VENV_PATH}/bin/activate"
+source_environment "${VENV_PATH}/bin/activate"
 
 if [[ "${INSTALL_VISION}" == true ]]; then
     python -m pip install --require-virtualenv \
@@ -110,15 +124,21 @@ else
 fi
 
 printf '%s\n' 'Installing the MAVROS GeographicLib datasets...'
-ros2 run mavros install_geographiclib_datasets.sh
+MAVROS_PREFIX="$(ros2 pkg prefix mavros)"
+MAVROS_DATASET_INSTALLER="${MAVROS_PREFIX}/lib/mavros/install_geographiclib_datasets.sh"
+if [[ ! -x "${MAVROS_DATASET_INSTALLER}" ]]; then
+    printf 'MAVROS dataset installer is missing or not executable: %s\n' \
+        "${MAVROS_DATASET_INSTALLER}" >&2
+    exit 1
+fi
+sudo "${MAVROS_DATASET_INSTALLER}"
 
 printf '%s\n' 'Building the ROS workspace...'
 cd "${PROJECT_ROOT}"
 colcon build --symlink-install --packages-select diy_autonomous_drone
 
 if [[ "${RUN_TESTS}" == true ]]; then
-    # shellcheck disable=SC1091
-    source "${PROJECT_ROOT}/install/setup.bash"
+    source_environment "${PROJECT_ROOT}/install/setup.bash"
     colcon test --packages-select diy_autonomous_drone
     colcon test-result --verbose
 fi

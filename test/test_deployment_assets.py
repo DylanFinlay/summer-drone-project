@@ -91,6 +91,25 @@ class TestDeploymentAssets(unittest.TestCase):
         self.assertIn('colcon build --symlink-install', bootstrap)
         self.assertIn('EUID == 0', bootstrap)
 
+    def test_bootstrap_sources_ros_without_nounset(self):
+        """ROS-generated setup scripts run outside Bash nounset mode."""
+        bootstrap = (
+            PROJECT_ROOT / 'scripts' / 'bootstrap_pi.sh'
+        ).read_text()
+        self.assertIn('source_environment "${ROS_SETUP}"', bootstrap)
+        self.assertIn('set +u', bootstrap)
+        self.assertIn('set -u', bootstrap)
+
+    def test_bootstrap_runs_mavros_dataset_installer_as_root(self):
+        """The current MAVROS GeographicLib installer receives root access."""
+        bootstrap = (
+            PROJECT_ROOT / 'scripts' / 'bootstrap_pi.sh'
+        ).read_text()
+        self.assertIn('ros2 pkg prefix mavros', bootstrap)
+        self.assertIn('sudo "${MAVROS_DATASET_INSTALLER}"', bootstrap)
+        self.assertNotIn(
+            'ros2 run mavros install_geographiclib_datasets.sh', bootstrap)
+
     def test_runtime_wrapper_uses_array_arguments_without_eval(self):
         """Environment values cannot become shell command fragments."""
         runner = (
