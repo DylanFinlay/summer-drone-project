@@ -235,7 +235,6 @@ def generate_launch_description():
             package='mavros',
             executable='mavros_node',
             namespace='mavros',
-            name='mavros_node',
             output='screen',
             parameters=[
                 PathJoinSubstitution(
